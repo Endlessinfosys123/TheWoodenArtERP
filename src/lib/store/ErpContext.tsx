@@ -37,6 +37,7 @@ import {
   INITIAL_COMPANY_SETTINGS
 } from '@/lib/mockData';
 import {
+  generateUuid,
   isSupabaseConfigured,
   fetchCompanySettings,
   saveCompanySettings,
@@ -213,7 +214,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
   const addClient = (clientData: Omit<Client, 'id' | 'created_at' | 'outstanding_balance'>) => {
     const newClient: Client = {
       ...clientData,
-      id: `cli-${Date.now()}`,
+      id: generateUuid(),
       outstanding_balance: 0,
       created_at: new Date().toISOString(),
     };
@@ -230,7 +231,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
   const addContactPerson = (clientId: string, contact: { name: string; designation: string; phone: string; email: string }) => {
     setClients(prev => prev.map(c => {
       if (c.id === clientId) {
-        const newCp = { id: `cp-${Date.now()}`, ...contact };
+        const newCp = { id: generateUuid(), ...contact };
         const updatedCps = [...c.contact_persons, newCp];
         updateClientDb(clientId, { contact_persons: updatedCps });
         return { ...c, contact_persons: updatedCps };
@@ -243,7 +244,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
   const addVendor = (vendorData: Omit<Vendor, 'id' | 'created_at' | 'outstanding_payable'>) => {
     const newVendor: Vendor = {
       ...vendorData,
-      id: `ven-${Date.now()}`,
+      id: generateUuid(),
       outstanding_payable: 0,
       created_at: new Date().toISOString(),
     };
@@ -258,7 +259,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
   const addVendorRate = (rateData: Omit<VendorRateHistory, 'id'>) => {
     const newRate: VendorRateHistory = {
       ...rateData,
-      id: `rate-${Date.now()}`,
+      id: generateUuid(),
     };
     setVendorRates(prev => [newRate, ...prev]);
     insertVendorRate(newRate);
@@ -268,7 +269,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
   const addMaterial = (materialData: Omit<Material, 'id' | 'created_at' | 'current_stock'>) => {
     const newMat: Material = {
       ...materialData,
-      id: `mat-${Date.now()}`,
+      id: generateUuid(),
       current_stock: 0,
       created_at: new Date().toISOString(),
     };
@@ -283,7 +284,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
 
     const newInward: MaterialInward = {
       ...inwardData,
-      id: `inw-${Date.now()}`,
+      id: generateUuid(),
       material_name: mat?.name || 'Unknown Material',
       client_name: client?.company_name || null,
       vendor_name: vendor?.vendor_name || null,
@@ -316,7 +317,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
   const addDrawingVersion = (fileData: Omit<JobFile, 'id' | 'uploaded_at' | 'comments'>) => {
     const newFile: JobFile = {
       ...fileData,
-      id: `file-${Date.now()}`,
+      id: generateUuid(),
       uploaded_at: new Date().toISOString(),
       comments: [],
     };
@@ -348,7 +349,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
 
   const addDrawingComment = (fileId: string, commentText: string) => {
     const newComment: DrawingComment = {
-      id: `c-${Date.now()}`,
+      id: generateUuid(),
       user_name: currentUser.full_name,
       role: currentUser.role,
       text: commentText,
@@ -396,7 +397,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
     const mac = jobData.machine_id ? machines.find(m => m.id === jobData.machine_id) : undefined;
 
     const initialAudit = {
-      id: `aud-${Date.now()}`,
+      id: generateUuid(),
       stage: 'Order Received' as JobStatus,
       user_name: currentUser.full_name,
       timestamp: new Date().toISOString(),
@@ -405,7 +406,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
 
     const newJob: JobOrder = {
       ...jobData,
-      id: `job-${Date.now()}`,
+      id: generateUuid(),
       job_no: jobNum,
       client_name: client?.company_name,
       material_name: mat?.name,
@@ -423,7 +424,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
 
   const updateJobStatus = (id: string, status: JobStatus, remarks?: string) => {
     const auditEntry = {
-      id: `aud-${Date.now()}`,
+      id: generateUuid(),
       stage: status,
       user_name: currentUser.full_name,
       timestamp: new Date().toISOString(),
@@ -449,7 +450,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
     const mac = machines.find(m => m.id === subOp.machine_id);
     const newSub: SubOperation = {
       ...subOp,
-      id: `sub-${Date.now()}`,
+      id: generateUuid(),
       machine_name: mac?.name,
     };
 
@@ -485,7 +486,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
     const job = jobOrders.find(j => j.id === qcData.job_order_id);
     const newQc: QCCheck = {
       ...qcData,
-      id: `qc-${Date.now()}`,
+      id: generateUuid(),
       job_no: job?.job_no,
       part_name: job?.part_name,
       client_name: job?.client_name,
@@ -511,7 +512,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
 
     const newDispatch: Dispatch = {
       ...dispatchData,
-      id: `dsp-${Date.now()}`,
+      id: generateUuid(),
       challan_no: challanNo,
       job_no: job?.job_no,
       client_name: client?.company_name,
@@ -556,7 +557,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
 
     const newInvoice: Invoice = {
       ...invoiceData,
-      id: `inv-${Date.now()}`,
+      id: generateUuid(),
       invoice_no: invNo,
       financial_year: 'FY 2026-27',
       client_name: client?.company_name,
@@ -590,7 +591,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
 
     const newPayment: Payment = {
       ...paymentData,
-      id: `pay-${Date.now()}`,
+      id: generateUuid(),
       invoice_no: inv?.invoice_no,
       client_name: client?.company_name,
       created_at: new Date().toISOString(),
