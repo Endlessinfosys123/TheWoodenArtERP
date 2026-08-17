@@ -8,36 +8,57 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 2. ENUMS
-CREATE TYPE user_role AS ENUM (
-  'admin', 
-  'production_manager', 
-  'store_clerk', 
-  'qc_inspector', 
-  'accounts', 
-  'operator'
-);
+DO $$ BEGIN
+    CREATE TYPE user_role AS ENUM ('admin', 'production_manager', 'store_clerk', 'qc_inspector', 'accounts', 'operator');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
 
-CREATE TYPE material_unit AS ENUM ('kg', 'pcs', 'mm', 'sheet', 'meter');
-CREATE TYPE material_source_type AS ENUM ('own_stock', 'client_supplied');
-CREATE TYPE stock_ledger_type AS ENUM ('grn_inward', 'issue_to_job', 'return_to_stock', 'scrap_entry');
-CREATE TYPE machine_type AS ENUM ('CNC Turning', 'VMC 3-Axis', 'VMC 4-Axis', 'VMC 5-Axis', 'CNC Lathe', 'Wire EDM', 'Grinding');
-CREATE TYPE machine_status AS ENUM ('Active', 'Maintenance', 'Offline');
-CREATE TYPE job_status AS ENUM (
-  'Order Received', 
-  'Material Allocated', 
-  'Programming', 
-  'Machining', 
-  'Quality Check', 
-  'Rework',
-  'Ready for Dispatch', 
-  'Delivered'
-);
-CREATE TYPE job_priority AS ENUM ('Low', 'Medium', 'High', 'Urgent');
-CREATE TYPE drawing_approval_status AS ENUM ('draft', 'approved', 'superseded');
-CREATE TYPE qc_result AS ENUM ('pass', 'fail', 'rework');
-CREATE TYPE invoice_type AS ENUM ('labour_only', 'material_and_labour');
-CREATE TYPE invoice_status AS ENUM ('draft', 'unpaid', 'partially_paid', 'paid', 'cancelled');
-CREATE TYPE payment_mode AS ENUM ('bank_transfer', 'upi', 'cheque', 'cash', 'credit');
+DO $$ BEGIN
+    CREATE TYPE material_unit AS ENUM ('kg', 'pcs', 'mm', 'sheet', 'meter', 'sq_ft', 'sq_m', 'inch');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE material_source_type AS ENUM ('own_stock', 'client_supplied');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE stock_ledger_type AS ENUM ('grn_inward', 'issue_to_job', 'return_to_stock', 'scrap_entry');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE machine_type AS ENUM ('CNC Turning', 'VMC 3-Axis', 'VMC 4-Axis', 'VMC 5-Axis', 'CNC Lathe', 'Wire EDM', 'Grinding');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE machine_status AS ENUM ('Active', 'Maintenance', 'Offline');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE job_status AS ENUM ('Order Received', 'Material Allocated', 'Programming', 'Machining', 'Quality Check', 'Rework', 'Ready for Dispatch', 'Delivered');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE job_priority AS ENUM ('Low', 'Medium', 'High', 'Urgent');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE drawing_approval_status AS ENUM ('draft', 'approved', 'superseded');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE qc_result AS ENUM ('pass', 'fail', 'rework');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE invoice_type AS ENUM ('labour_only', 'material_and_labour');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE invoice_status AS ENUM ('draft', 'unpaid', 'partially_paid', 'paid', 'cancelled');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE payment_mode AS ENUM ('bank_transfer', 'upi', 'cheque', 'cash', 'credit');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 -- 3. COMPANY SETTINGS TABLE
 CREATE TABLE IF NOT EXISTS company_settings (
@@ -339,21 +360,54 @@ ALTER TABLE dispatches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow public access on company_settings" ON company_settings;
 CREATE POLICY "Allow public access on company_settings" ON company_settings FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on profiles" ON profiles;
 CREATE POLICY "Allow public access on profiles" ON profiles FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on clients" ON clients;
 CREATE POLICY "Allow public access on clients" ON clients FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on client_contact_persons" ON client_contact_persons;
 CREATE POLICY "Allow public access on client_contact_persons" ON client_contact_persons FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on vendors" ON vendors;
 CREATE POLICY "Allow public access on vendors" ON vendors FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on vendor_rate_history" ON vendor_rate_history;
 CREATE POLICY "Allow public access on vendor_rate_history" ON vendor_rate_history FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on materials" ON materials;
 CREATE POLICY "Allow public access on materials" ON materials FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on material_inwards" ON material_inwards;
 CREATE POLICY "Allow public access on material_inwards" ON material_inwards FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on machines" ON machines;
 CREATE POLICY "Allow public access on machines" ON machines FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on job_orders" ON job_orders;
 CREATE POLICY "Allow public access on job_orders" ON job_orders FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on job_sub_operations" ON job_sub_operations;
 CREATE POLICY "Allow public access on job_sub_operations" ON job_sub_operations FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on job_files" ON job_files;
 CREATE POLICY "Allow public access on job_files" ON job_files FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on drawing_comments" ON drawing_comments;
 CREATE POLICY "Allow public access on drawing_comments" ON drawing_comments FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on qc_checks" ON qc_checks;
 CREATE POLICY "Allow public access on qc_checks" ON qc_checks FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on dispatches" ON dispatches;
 CREATE POLICY "Allow public access on dispatches" ON dispatches FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on invoices" ON invoices;
 CREATE POLICY "Allow public access on invoices" ON invoices FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on payments" ON payments;
 CREATE POLICY "Allow public access on payments" ON payments FOR ALL USING (true) WITH CHECK (true);
 
