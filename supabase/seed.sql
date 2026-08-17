@@ -68,10 +68,20 @@ ALTER TABLE materials ALTER COLUMN unit TYPE TEXT USING unit::TEXT;
 
 -- 6. MATERIALS
 INSERT INTO materials (id, name, category, grade, unit, hsn_code, thickness, thickness_unit, sheet_length, sheet_width, dimension_unit, sqft_per_sheet, current_stock, reorder_level, unit_cost, batch_tracking_enabled) VALUES
-  ('d1111111-1111-1111-1111-111111111111', 'HDMR MDF Sheet 18mm (8ft x 4ft)', 'MDF', 'HDMR Exterior Grade', 'sq_ft', '4411', 18.00, 'mm', 8.00, 4.00, 'ft', 32.00, 640.00, 160.00, 85.00, true),
-  ('d2222222-2222-2222-2222-222222222222', 'Corian Solid Surface Sheet 12mm (8ft x 4ft)', 'Corian', 'Polymer Acrylic Solid Surface', 'sq_ft', '3920', 12.00, 'mm', 8.00, 4.00, 'ft', 32.00, 320.00, 96.00, 280.00, true),
-  ('d3333333-3333-3333-3333-333333333333', 'Teak Wooden Plywood 19mm (8ft x 4ft)', 'Wooden', 'BWP Grade 710', 'sq_ft', '4412', 19.00, 'mm', 8.00, 4.00, 'ft', 32.00, 128.00, 200.00, 135.00, false),
+  ('d1111111-1111-1111-1111-111111111111', 'HDMR MDF Sheet 18mm (8ft x 4ft)', 'MDF', 'HDMR Exterior Grade', 'sheet', '4411', 18.00, 'mm', 8.00, 4.00, 'ft', 32.00, 20.00, 5.00, 2720.00, true),
+  ('d2222222-2222-2222-2222-222222222222', 'Corian Solid Surface Sheet 12mm (8ft x 4ft)', 'Corian', 'Polymer Acrylic Solid Surface', 'sheet', '3920', 12.00, 'mm', 8.00, 4.00, 'ft', 32.00, 10.00, 3.00, 8960.00, true),
+  ('d3333333-3333-3333-3333-333333333333', 'Teak Wooden Plywood 19mm (8ft x 4ft)', 'Wooden', 'BWP Grade 710', 'sheet', '4412', 19.00, 'mm', 8.00, 4.00, 'ft', 32.00, 4.00, 6.00, 4320.00, false),
   ('d4444444-4444-4444-4444-444444444444', 'Mild Steel Sheet 2mm (8ft x 4ft)', 'MS', 'CRCA IS 513', 'kg', '7209', 2.00, 'mm', 8.00, 4.00, 'ft', 32.00, 450.00, 100.00, 75.00, true),
   ('d5555555-5555-5555-5555-555555555555', 'Stainless Steel Sheet 304 3mm (8ft x 4ft)', 'SS', 'SS304 2B Finish', 'kg', '7219', 3.00, 'mm', 8.00, 4.00, 'ft', 32.00, 220.00, 80.00, 280.00, true),
-  ('d6666666-6666-6666-6666-666666666666', 'Cast Acrylic Sheet Clear 6mm (8ft x 4ft)', 'Acrylic', 'High Clarity PMMA', 'sq_ft', '3920', 6.00, 'mm', 8.00, 4.00, 'ft', 32.00, 192.00, 64.00, 165.00, true)
-ON CONFLICT (id) DO NOTHING;
+  ('d6666666-6666-6666-6666-666666666666', 'Cast Acrylic Sheet Clear 6mm (8ft x 4ft)', 'Acrylic', 'High Clarity PMMA', 'sheet', '3920', 6.00, 'mm', 8.00, 4.00, 'ft', 32.00, 6.00, 2.00, 5280.00, true)
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  category = EXCLUDED.category,
+  grade = EXCLUDED.grade,
+  unit = EXCLUDED.unit,
+  thickness = EXCLUDED.thickness,
+  thickness_unit = EXCLUDED.thickness_unit,
+  sheet_length = EXCLUDED.sheet_length,
+  sheet_width = EXCLUDED.sheet_width,
+  sqft_per_sheet = EXCLUDED.sqft_per_sheet,
+  unit_cost = EXCLUDED.unit_cost;
