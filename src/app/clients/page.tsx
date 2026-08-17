@@ -61,15 +61,16 @@ export default function ClientsPage() {
 
   const filteredClients = clients.filter(c => {
     const matchesSearch = 
-      c.company_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.gstin.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.city.toLowerCase().includes(searchTerm.toLowerCase());
+      (c.company_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.gstin || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.city || '').toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [successMsg, setSuccessMsg] = useState('');
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,6 +85,9 @@ export default function ClientsPage() {
           ? [{ id: `cp-${Date.now()}`, name: clientForm.contact_person, designation: 'Primary Contact', phone: clientForm.phone || '+91 00000 00000', email: clientForm.email || 'info@client.com' }]
           : [],
       });
+
+      setSuccessMsg(`Client "${clientForm.company_name}" added successfully and synced with Supabase!`);
+      setTimeout(() => setSuccessMsg(''), 4000);
 
       setIsAddModalOpen(false);
       setClientForm({
@@ -146,6 +150,13 @@ export default function ClientsPage() {
         </button>
       </div>
 
+      {successMsg && (
+        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+          <Users className="w-4 h-4 text-emerald-500" />
+          <span>{successMsg}</span>
+        </div>
+      )}
+
       {/* Filter & Search Bar */}
       <div className="bg-card p-4 rounded-xl border border-border shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="relative flex-1 w-full">
@@ -179,7 +190,9 @@ export default function ClientsPage() {
       {/* Client List Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {filteredClients.map((client) => {
-          const isOverCredit = client.outstanding_balance > client.credit_limit;
+          const outstanding = client.outstanding_balance || 0;
+          const limit = client.credit_limit || 0;
+          const isOverCredit = outstanding > limit;
           return (
             <div
               key={client.id}
@@ -188,44 +201,44 @@ export default function ClientsPage() {
               <div>
                 <div className="flex items-start justify-between gap-3 border-b border-border pb-3 mb-3">
                   <div>
-                    <h3 className="font-bold text-base text-foreground leading-snug">{client.company_name}</h3>
-                    <p className="text-xs font-mono text-muted-foreground mt-0.5">GSTIN: {client.gstin}</p>
+                    <h3 className="font-bold text-base text-foreground leading-snug">{client.company_name || 'Unnamed Client'}</h3>
+                    <p className="text-xs font-mono text-muted-foreground mt-0.5">GSTIN: {client.gstin || 'N/A'}</p>
                   </div>
                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
                     client.status === 'active' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
                   }`}>
-                    {client.status}
+                    {client.status || 'active'}
                   </span>
                 </div>
 
                 <div className="space-y-2 text-xs text-muted-foreground mb-4">
                   <div className="flex items-center gap-2">
                     <Building2 className="w-3.5 h-3.5 text-primary shrink-0" />
-                    <span className="text-foreground font-medium">{client.contact_person}</span>
+                    <span className="text-foreground font-medium">{client.contact_person || 'Primary Contact'}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Phone className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    <span>{client.phone}</span>
+                    <span>{client.phone || 'N/A'}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Mail className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
-                    <span className="truncate">{client.email}</span>
+                    <span className="truncate">{client.email || 'N/A'}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                    <span>{client.city}, {client.state_name} ({client.state_code})</span>
+                    <span>{client.city || 'Pune'}, {client.state_name || 'Maharashtra'} ({client.state_code || '27'})</span>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-xs p-3 rounded-lg bg-muted/40 border border-border">
                   <div>
                     <span className="text-[10px] uppercase font-semibold text-muted-foreground block">Credit Limit</span>
-                    <span className="font-bold text-foreground">₹{client.credit_limit.toLocaleString('en-IN')}</span>
+                    <span className="font-bold text-foreground">₹{limit.toLocaleString('en-IN')}</span>
                   </div>
                   <div>
                     <span className="text-[10px] uppercase font-semibold text-muted-foreground block">Outstanding Balance</span>
                     <span className={`font-extrabold ${isOverCredit ? 'text-rose-500 animate-pulse' : 'text-primary'}`}>
-                      ₹{client.outstanding_balance.toLocaleString('en-IN')}
+                      ₹{outstanding.toLocaleString('en-IN')}
                     </span>
                   </div>
                 </div>
