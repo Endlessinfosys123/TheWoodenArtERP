@@ -96,15 +96,20 @@ export default function JobsPage() {
     return matchesSearch && matchesStatus;
   });
 
-  const handleCreateJobSubmit = (e: React.FormEvent) => {
+  const handleCreateJobSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!jobForm.client_id || !jobForm.part_name || !jobForm.material_id) return;
+    if (!jobForm.part_name) return;
 
-    createJobOrder({
+    const defaultClientId = clients[0]?.id || '';
+    const defaultMaterialId = materials[0]?.id || '';
+
+    await createJobOrder({
       ...jobForm,
-      qty: Number(jobForm.qty),
-      estimated_setup_min: Number(jobForm.estimated_setup_min),
-      estimated_cycle_min: Number(jobForm.estimated_cycle_min),
+      client_id: jobForm.client_id || defaultClientId,
+      material_id: jobForm.material_id || defaultMaterialId,
+      qty: Number(jobForm.qty) || 1,
+      estimated_setup_min: Number(jobForm.estimated_setup_min) || 15,
+      estimated_cycle_min: Number(jobForm.estimated_cycle_min) || 30,
       actual_setup_min: 0,
       actual_cycle_min: 0,
       status: 'Order Received',

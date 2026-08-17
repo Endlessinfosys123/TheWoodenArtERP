@@ -69,18 +69,45 @@ export default function ClientsPage() {
     return matchesSearch && matchesStatus;
   });
 
-  const handleCreateSubmit = (e: React.FormEvent) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clientForm.company_name || !clientForm.gstin) return;
+    if (!clientForm.company_name) return;
 
-    addClient({
-      ...clientForm,
-      contact_persons: clientForm.contact_person 
-        ? [{ id: `cp-${Date.now()}`, name: clientForm.contact_person, designation: 'Primary Contact', phone: clientForm.phone, email: clientForm.email }]
-        : [],
-    });
+    setIsSubmitting(true);
+    try {
+      await addClient({
+        ...clientForm,
+        gstin: clientForm.gstin || '27URP0000000000',
+        contact_persons: clientForm.contact_person 
+          ? [{ id: `cp-${Date.now()}`, name: clientForm.contact_person, designation: 'Primary Contact', phone: clientForm.phone || '+91 00000 00000', email: clientForm.email || 'info@client.com' }]
+          : [],
+      });
 
-    setIsAddModalOpen(false);
+      setIsAddModalOpen(false);
+      setClientForm({
+        company_name: '',
+        gstin: '',
+        contact_person: '',
+        phone: '',
+        email: '',
+        billing_address: '',
+        shipping_address: '',
+        city: 'Pune',
+        state_code: '27',
+        state_name: 'Maharashtra',
+        credit_terms: '30 Days Net',
+        payment_due_days: 30,
+        credit_limit: 500000,
+        status: 'active',
+        contact_persons: [],
+      });
+    } catch (err) {
+      console.error('Error adding client:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleAddContactSubmit = (e: React.FormEvent) => {
@@ -246,13 +273,12 @@ export default function ClientsPage() {
                   />
                 </div>
                 <div>
-                  <label className="font-semibold block mb-1">GSTIN Number *</label>
+                  <label className="font-semibold block mb-1">GSTIN Number (Optional for Unregistered)</label>
                   <input
                     type="text"
-                    required
                     value={clientForm.gstin}
                     onChange={(e) => setClientForm({ ...clientForm, gstin: e.target.value.toUpperCase() })}
-                    placeholder="27AAACA1234A1Z5"
+                    placeholder="e.g. 27AAACA1234A1Z5 or Leave Empty"
                     className="w-full p-2 bg-muted/50 border border-border rounded-lg text-foreground font-mono"
                   />
                 </div>

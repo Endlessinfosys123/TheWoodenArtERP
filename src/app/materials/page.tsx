@@ -171,26 +171,26 @@ export default function MaterialsPage() {
   const clientSuppliedEntries = materialInwards.filter(i => i.source_type === 'client_supplied');
   const ownStockValuation = materials.reduce((acc, m) => acc + (m.current_stock * m.unit_cost), 0);
 
-  const handleAddMaterialSubmit = (e: React.FormEvent) => {
+  const handleAddMaterialSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!matForm.name || !matForm.grade) return;
+    if (!matForm.name) return;
 
     const sqft = computeSqFtPerSheet(matForm.sheet_length, matForm.sheet_width, matForm.dimension_unit);
 
-    addMaterial({
+    await addMaterial({
       name: matForm.name,
       category: matForm.category,
-      grade: matForm.grade,
+      grade: matForm.grade || 'Standard Grade',
       unit: matForm.unit,
-      hsn_code: matForm.hsn_code,
-      thickness: Number(matForm.thickness),
-      thickness_unit: matForm.thickness_unit,
-      sheet_length: Number(matForm.sheet_length),
-      sheet_width: Number(matForm.sheet_width),
-      dimension_unit: matForm.dimension_unit,
-      sqft_per_sheet: sqft,
-      reorder_level: Number(matForm.reorder_level),
-      unit_cost: Number(matForm.unit_cost),
+      hsn_code: matForm.hsn_code || '4411',
+      thickness: Number(matForm.thickness) || 18,
+      thickness_unit: matForm.thickness_unit || 'mm',
+      sheet_length: Number(matForm.sheet_length) || 8,
+      sheet_width: Number(matForm.sheet_width) || 4,
+      dimension_unit: matForm.dimension_unit || 'ft',
+      sqft_per_sheet: sqft || 32,
+      reorder_level: Number(matForm.reorder_level) || 50,
+      unit_cost: Number(matForm.unit_cost) || 0,
       batch_tracking_enabled: matForm.batch_tracking_enabled,
     });
 

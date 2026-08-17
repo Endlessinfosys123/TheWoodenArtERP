@@ -61,11 +61,15 @@ export default function VendorsPage() {
     return matchesSearch && matchesCat;
   });
 
-  const handleAddVendorSubmit = (e: React.FormEvent) => {
+  const handleAddVendorSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!vendorForm.vendor_name || !vendorForm.gstin) return;
+    if (!vendorForm.vendor_name) return;
 
-    addVendor(vendorForm);
+    await addVendor({
+      ...vendorForm,
+      gstin: vendorForm.gstin || '27URP0000000000',
+    });
+
     setVendorForm({
       vendor_name: '',
       gstin: '',
