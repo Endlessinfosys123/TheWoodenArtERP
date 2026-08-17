@@ -71,12 +71,14 @@ export default function ClientsPage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!clientForm.company_name) return;
 
     setIsSubmitting(true);
+    setErrorMsg('');
     try {
       await addClient({
         ...clientForm,
@@ -107,8 +109,9 @@ export default function ClientsPage() {
         status: 'active',
         contact_persons: [],
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error adding client:', err);
+      setErrorMsg(err?.message || 'Failed to save client to Supabase DB. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -271,6 +274,12 @@ export default function ClientsPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {errorMsg && (
+              <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-500 text-xs font-semibold">
+                ⚠️ {errorMsg}
+              </div>
+            )}
 
             <form onSubmit={handleCreateSubmit} className="space-y-3 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

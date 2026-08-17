@@ -218,10 +218,20 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
       outstanding_balance: 0,
       created_at: new Date().toISOString(),
     };
-    setClients(prev => [newClient, ...prev]);
-    await insertClient(newClient);
-    const dbClients = await fetchClients();
-    if (dbClients && dbClients.length > 0) setClients(dbClients);
+
+    try {
+      await insertClient(newClient);
+      const dbClients = await fetchClients();
+      if (dbClients && dbClients.length > 0) {
+        setClients(dbClients);
+      } else {
+        setClients(prev => [newClient, ...prev]);
+      }
+    } catch (err) {
+      console.error('[ErpContext] insertClient failed, preserving in local state:', err);
+      setClients(prev => [newClient, ...prev]);
+      throw err;
+    }
   };
 
 

@@ -94,18 +94,18 @@ export async function fetchClients(): Promise<Client[] | null> {
 
 export async function insertClient(client: Client): Promise<void> {
   const supabase = createClient();
-  if (!supabase) return;
+  if (!supabase) throw new Error('Supabase DB Client is not connected');
   const { contact_persons, ...clientRaw } = client;
   const clientPayload = {
     id: ensureUuid(clientRaw.id),
-    company_name: clientRaw.company_name,
-    gstin: clientRaw.gstin || '27AAAAA0000A1Z5',
-    contact_person: clientRaw.contact_person || 'Primary Contact',
-    phone: clientRaw.phone || '+91 00000 00000',
-    email: clientRaw.email || 'info@client.com',
-    billing_address: clientRaw.billing_address || 'Works Address Not Specified',
-    shipping_address: clientRaw.shipping_address || clientRaw.billing_address || 'Works Address Not Specified',
-    city: clientRaw.city || 'Pune',
+    company_name: clientRaw.company_name ? clientRaw.company_name.trim() : 'Unnamed Client',
+    gstin: (clientRaw.gstin && clientRaw.gstin.trim() !== '') ? clientRaw.gstin.trim() : '27URP0000000000',
+    contact_person: (clientRaw.contact_person && clientRaw.contact_person.trim() !== '') ? clientRaw.contact_person.trim() : 'Primary Contact',
+    phone: (clientRaw.phone && clientRaw.phone.trim() !== '') ? clientRaw.phone.trim() : '+91 00000 00000',
+    email: (clientRaw.email && clientRaw.email.trim() !== '') ? clientRaw.email.trim() : 'info@client.com',
+    billing_address: (clientRaw.billing_address && clientRaw.billing_address.trim() !== '') ? clientRaw.billing_address.trim() : 'Works Address Not Specified',
+    shipping_address: (clientRaw.shipping_address && clientRaw.shipping_address.trim() !== '') ? clientRaw.shipping_address.trim() : (clientRaw.billing_address || 'Works Address Not Specified'),
+    city: (clientRaw.city && clientRaw.city.trim() !== '') ? clientRaw.city.trim() : 'Pune',
     state_code: clientRaw.state_code || '27',
     state_name: clientRaw.state_name || 'Maharashtra',
     credit_terms: clientRaw.credit_terms || '30 Days Net',
@@ -119,7 +119,10 @@ export async function insertClient(client: Client): Promise<void> {
   const { error } = await supabase.from('clients').insert([clientPayload]);
   if (error) {
     console.error('[Supabase Error - insertClient]:', error);
-  } else if (contact_persons && contact_persons.length > 0) {
+    throw new Error(error.message || 'Failed to save client in Supabase DB');
+  }
+
+  if (contact_persons && contact_persons.length > 0) {
     const cpPayloads = contact_persons.map(cp => ({
       id: ensureUuid(cp.id),
       client_id: clientPayload.id,
