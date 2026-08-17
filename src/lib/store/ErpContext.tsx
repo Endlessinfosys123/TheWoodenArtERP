@@ -211,7 +211,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Client actions
-  const addClient = (clientData: Omit<Client, 'id' | 'created_at' | 'outstanding_balance'>) => {
+  const addClient = async (clientData: Omit<Client, 'id' | 'created_at' | 'outstanding_balance'>) => {
     const newClient: Client = {
       ...clientData,
       id: generateUuid(),
@@ -219,29 +219,38 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
       created_at: new Date().toISOString(),
     };
     setClients(prev => [newClient, ...prev]);
-    insertClient(newClient);
+    await insertClient(newClient);
+    const dbClients = await fetchClients();
+    if (dbClients && dbClients.length > 0) setClients(dbClients);
   };
 
 
-  const updateClient = (id: string, clientData: Partial<Client>) => {
+  const updateClient = async (id: string, clientData: Partial<Client>) => {
     setClients(prev => prev.map(c => c.id === id ? { ...c, ...clientData } : c));
-    updateClientDb(id, clientData);
+    await updateClientDb(id, clientData);
+    const dbClients = await fetchClients();
+    if (dbClients && dbClients.length > 0) setClients(dbClients);
   };
 
-  const addContactPerson = (clientId: string, contact: { name: string; designation: string; phone: string; email: string }) => {
+  const addContactPerson = async (clientId: string, contact: { name: string; designation: string; phone: string; email: string }) => {
+    const newCp = { id: generateUuid(), ...contact };
     setClients(prev => prev.map(c => {
       if (c.id === clientId) {
-        const newCp = { id: generateUuid(), ...contact };
-        const updatedCps = [...c.contact_persons, newCp];
-        updateClientDb(clientId, { contact_persons: updatedCps });
-        return { ...c, contact_persons: updatedCps };
+        return { ...c, contact_persons: [...(c.contact_persons || []), newCp] };
       }
       return c;
     }));
+    const target = clients.find(c => c.id === clientId);
+    if (target) {
+      const updatedCps = [...(target.contact_persons || []), newCp];
+      await updateClientDb(clientId, { contact_persons: updatedCps });
+      const dbClients = await fetchClients();
+      if (dbClients && dbClients.length > 0) setClients(dbClients);
+    }
   };
 
   // Vendor actions
-  const addVendor = (vendorData: Omit<Vendor, 'id' | 'created_at' | 'outstanding_payable'>) => {
+  const addVendor = async (vendorData: Omit<Vendor, 'id' | 'created_at' | 'outstanding_payable'>) => {
     const newVendor: Vendor = {
       ...vendorData,
       id: generateUuid(),
@@ -249,24 +258,28 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
       created_at: new Date().toISOString(),
     };
     setVendors(prev => [newVendor, ...prev]);
-    insertVendor(newVendor);
+    await insertVendor(newVendor);
+    const dbVendors = await fetchVendors();
+    if (dbVendors && dbVendors.length > 0) setVendors(dbVendors);
   };
 
   const updateVendor = (id: string, vendorData: Partial<Vendor>) => {
     setVendors(prev => prev.map(v => v.id === id ? { ...v, ...vendorData } : v));
   };
 
-  const addVendorRate = (rateData: Omit<VendorRateHistory, 'id'>) => {
+  const addVendorRate = async (rateData: Omit<VendorRateHistory, 'id'>) => {
     const newRate: VendorRateHistory = {
       ...rateData,
       id: generateUuid(),
     };
     setVendorRates(prev => [newRate, ...prev]);
-    insertVendorRate(newRate);
+    await insertVendorRate(newRate);
+    const dbRates = await fetchVendorRates();
+    if (dbRates && dbRates.length > 0) setVendorRates(dbRates);
   };
 
   // Material actions
-  const addMaterial = (materialData: Omit<Material, 'id' | 'created_at' | 'current_stock'>) => {
+  const addMaterial = async (materialData: Omit<Material, 'id' | 'created_at' | 'current_stock'>) => {
     const newMat: Material = {
       ...materialData,
       id: generateUuid(),
@@ -274,7 +287,9 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
       created_at: new Date().toISOString(),
     };
     setMaterials(prev => [newMat, ...prev]);
-    insertMaterial(newMat);
+    await insertMaterial(newMat);
+    const dbMaterials = await fetchMaterials();
+    if (dbMaterials && dbMaterials.length > 0) setMaterials(dbMaterials);
   };
 
   const addStockLedgerEntry = (inwardData: Omit<MaterialInward, 'id' | 'created_at'>) => {

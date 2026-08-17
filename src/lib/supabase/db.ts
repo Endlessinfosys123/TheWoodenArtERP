@@ -99,20 +99,20 @@ export async function insertClient(client: Client): Promise<void> {
   const clientPayload = {
     id: ensureUuid(clientRaw.id),
     company_name: clientRaw.company_name,
-    gstin: clientRaw.gstin,
-    contact_person: clientRaw.contact_person,
-    phone: clientRaw.phone,
-    email: clientRaw.email,
-    billing_address: clientRaw.billing_address,
-    shipping_address: clientRaw.shipping_address,
-    city: clientRaw.city,
+    gstin: clientRaw.gstin || '27AAAAA0000A1Z5',
+    contact_person: clientRaw.contact_person || 'Primary Contact',
+    phone: clientRaw.phone || '+91 00000 00000',
+    email: clientRaw.email || 'info@client.com',
+    billing_address: clientRaw.billing_address || 'Works Address Not Specified',
+    shipping_address: clientRaw.shipping_address || clientRaw.billing_address || 'Works Address Not Specified',
+    city: clientRaw.city || 'Pune',
     state_code: clientRaw.state_code || '27',
     state_name: clientRaw.state_name || 'Maharashtra',
     credit_terms: clientRaw.credit_terms || '30 Days Net',
-    payment_due_days: clientRaw.payment_due_days || 30,
-    credit_limit: clientRaw.credit_limit || 500000.00,
+    payment_due_days: Number(clientRaw.payment_due_days) || 30,
+    credit_limit: Number(clientRaw.credit_limit) || 500000.00,
     status: clientRaw.status || 'active',
-    outstanding_balance: clientRaw.outstanding_balance || 0.00,
+    outstanding_balance: Number(clientRaw.outstanding_balance) || 0.00,
     created_at: clientRaw.created_at || new Date().toISOString()
   };
 
@@ -123,10 +123,10 @@ export async function insertClient(client: Client): Promise<void> {
     const cpPayloads = contact_persons.map(cp => ({
       id: ensureUuid(cp.id),
       client_id: clientPayload.id,
-      name: cp.name,
-      designation: cp.designation,
-      phone: cp.phone,
-      email: cp.email,
+      name: cp.name || 'Primary Contact',
+      designation: cp.designation || 'Contact',
+      phone: cp.phone || '+91 00000 00000',
+      email: cp.email || 'info@client.com',
       created_at: new Date().toISOString()
     }));
     const { error: cpError } = await supabase.from('client_contact_persons').insert(cpPayloads);
