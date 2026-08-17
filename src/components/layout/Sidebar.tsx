@@ -28,7 +28,10 @@ interface NavItem {
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { currentUser, lowStockCount, pendingJobsCount, unpaidInvoicesCount } = useErp();
+  const { currentUser, companySettings, lowStockCount, pendingJobsCount, unpaidInvoicesCount } = useErp();
+
+  const companyName = companySettings?.company_name || 'The Wooden Art';
+  const logoUrl = companySettings?.logo_url;
 
   const navItems: NavItem[] = [
     {
@@ -103,18 +106,23 @@ export default function Sidebar() {
 
   return (
     <aside className="w-64 bg-card border-r border-border flex flex-col h-screen sticky top-0 z-30 transition-all duration-200 no-print select-none">
-      {/* Brand & Logo */}
-      <div className="p-4 border-b border-border flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-600 to-blue-600 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-cyan-500/20">
-          CNC
-        </div>
-        <div>
-          <h1 className="font-bold text-sm leading-tight text-foreground tracking-wide">
-            PRECISION ERP
+      {/* Dynamic Brand & Logo */}
+      <div className="p-4 border-b border-border flex items-center gap-3 bg-muted/20">
+        {logoUrl ? (
+          <img 
+            src={logoUrl} 
+            alt={companyName} 
+            className="w-10 h-10 rounded-xl object-contain bg-background border border-border p-1 shadow-md shadow-primary/10 shrink-0" 
+          />
+        ) : (
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-600 via-orange-600 to-amber-700 flex items-center justify-center text-white font-extrabold text-base shadow-lg shadow-amber-600/20 border border-amber-500/30 shrink-0">
+            {companyName.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
+          </div>
+        )}
+        <div className="overflow-hidden">
+          <h1 className="font-extrabold text-sm leading-tight text-foreground tracking-tight truncate" title={companyName}>
+            {companyName}
           </h1>
-          <p className="text-[11px] text-muted-foreground font-medium">
-            Job Work & Machining v1.0
-          </p>
         </div>
       </div>
 

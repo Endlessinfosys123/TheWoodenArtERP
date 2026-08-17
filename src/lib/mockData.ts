@@ -16,13 +16,14 @@ import {
 } from '@/types';
 
 export const INITIAL_COMPANY_SETTINGS: CompanySettings = {
-  company_name: 'Precision CNC Machining & Engineering Works',
+  company_name: 'The Wooden Art',
+  logo_url: '',
   gstin: '27AAACP9988C1Z4',
   state_code: '27',
   state_name: 'Maharashtra',
   address: 'Plot 88, Sector 10, MIDC Industrial Area, Bhosari, Pune, MH - 411026',
   phone: '+91 20 2712 8899 / +91 98220 99887',
-  email: 'operations@precisioncncworks.com',
+  email: 'operations@thewoodenart.com',
   bank_name: 'HDFC Bank Ltd',
   account_no: '50200049811204',
   ifsc_code: 'HDFC0000241',

@@ -64,6 +64,7 @@ EXCEPTION WHEN duplicate_object THEN null; END $$;
 CREATE TABLE IF NOT EXISTS company_settings (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   company_name TEXT NOT NULL,
+  logo_url TEXT,
   gstin TEXT NOT NULL,
   state_code VARCHAR(5) NOT NULL DEFAULT '27',
   state_name TEXT NOT NULL DEFAULT 'Maharashtra',
@@ -76,6 +77,8 @@ CREATE TABLE IF NOT EXISTS company_settings (
   branch TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS logo_url TEXT;
 
 -- 4. PROFILES TABLE (USERS & RBAC)
 CREATE TABLE IF NOT EXISTS profiles (

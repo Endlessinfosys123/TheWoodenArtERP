@@ -362,6 +362,7 @@ export interface Payment {
 }
 
 export interface CompanySettings {
+  id?: string;
   company_name: string;
   gstin: string;
   state_code: string;
@@ -369,9 +370,9 @@ export interface CompanySettings {
   address: string;
   phone: string;
   email: string;
-  bank_name: string;
-  account_no: string;
-  ifsc_code: string;
-  branch: string;
+  logo_url?: string;
+  bank_name?: string;
+  account_no?: string;
+  ifsc_code?: string;
+  branch?: string;
 }
-

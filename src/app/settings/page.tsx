@@ -10,7 +10,9 @@ import {
   Save, 
   CheckCircle2, 
   Database,
-  Lock
+  Lock,
+  Image,
+  Upload
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -34,18 +36,87 @@ export default function SettingsPage() {
           Company Profile & System Settings
         </h1>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Configure company GSTIN master, state code, bank details for invoice generation, and user role management.
+          Configure company GSTIN master, state code, company logo branding, bank details, and user role management.
         </p>
       </div>
 
       {isSaved && (
         <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 text-xs font-semibold flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4" /> Company profile settings updated successfully!
+          <CheckCircle2 className="w-4 h-4" /> Company profile & logo settings updated successfully!
         </div>
       )}
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="p-6 rounded-2xl bg-card border border-border shadow-sm space-y-6 text-xs">
+        {/* Company Branding & Logo Upload */}
+        <div className="space-y-4">
+          <h3 className="font-bold text-sm text-foreground flex items-center gap-2 border-b border-border pb-3">
+            <Image className="w-4 h-4 text-amber-500" /> Company Branding & Sidebar Logo
+          </h3>
+
+          <div className="p-4 rounded-xl bg-muted/30 border border-border flex flex-col sm:flex-row items-center gap-4">
+            {/* Logo Preview */}
+            <div className="w-20 h-20 rounded-2xl bg-card border-2 border-dashed border-border flex items-center justify-center overflow-hidden shrink-0 shadow-sm relative group">
+              {formData.logo_url ? (
+                <img src={formData.logo_url} alt="Company Logo" className="w-full h-full object-contain p-1" />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-tr from-amber-600 to-orange-600 flex items-center justify-center text-white font-extrabold text-xl">
+                  {formData.company_name ? formData.company_name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase() : 'WA'}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2 flex-1 w-full">
+              <label className="font-bold text-foreground block">Upload Company Logo</label>
+              <p className="text-[11px] text-muted-foreground">
+                Upload your logo image (PNG, JPG, SVG, WEBP). This logo will appear at the top-left of the sidebar.
+              </p>
+
+              <div className="flex flex-col sm:flex-row items-center gap-2">
+                <label className="cursor-pointer px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold text-xs flex items-center gap-1.5 hover:bg-primary/90 transition shadow-sm">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Choose Image File</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          setFormData(prev => ({ ...prev, logo_url: reader.result as string }));
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                  />
+                </label>
+
+                {formData.logo_url && (
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, logo_url: '' }))}
+                    className="px-3 py-1.5 rounded-lg border border-rose-500/30 text-rose-400 font-semibold text-xs hover:bg-rose-500/10 transition"
+                  >
+                    Remove Custom Logo
+                  </button>
+                )}
+              </div>
+
+              <div className="pt-1">
+                <span className="text-[11px] text-muted-foreground block mb-1">Or Paste Image URL</span>
+                <input
+                  type="text"
+                  value={formData.logo_url || ''}
+                  onChange={(e) => setFormData({ ...formData, logo_url: e.target.value })}
+                  placeholder="https://example.com/logo.png"
+                  className="w-full p-2 bg-card border border-border rounded-lg text-foreground font-mono text-[11px]"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
         <div className="space-y-4">
           <h3 className="font-bold text-sm text-foreground flex items-center gap-2 border-b border-border pb-3">
             <Building2 className="w-4 h-4 text-primary" /> Company GST & Legal Registration
