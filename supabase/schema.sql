@@ -164,6 +164,15 @@ CREATE TABLE IF NOT EXISTS materials (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Ensure unit column allows any text string (sq_ft, sq_m, inch, sheet, kg, pcs, meter)
+DO $$ BEGIN
+    ALTER TYPE material_unit ADD VALUE IF NOT EXISTS 'sq_ft';
+    ALTER TYPE material_unit ADD VALUE IF NOT EXISTS 'sq_m';
+    ALTER TYPE material_unit ADD VALUE IF NOT EXISTS 'inch';
+EXCEPTION WHEN OTHERS THEN null; END $$;
+
+ALTER TABLE materials ALTER COLUMN unit TYPE TEXT USING unit::TEXT;
+
 -- Ensure new columns are added if materials table already existed from previous schema run
 ALTER TABLE materials ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'MDF';
 ALTER TABLE materials ADD COLUMN IF NOT EXISTS thickness NUMERIC(8, 2) DEFAULT 18.00;

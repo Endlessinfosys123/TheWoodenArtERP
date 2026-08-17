@@ -63,6 +63,9 @@ ALTER TABLE materials ADD COLUMN IF NOT EXISTS sheet_width NUMERIC(8, 2) DEFAULT
 ALTER TABLE materials ADD COLUMN IF NOT EXISTS dimension_unit VARCHAR(10) DEFAULT 'ft';
 ALTER TABLE materials ADD COLUMN IF NOT EXISTS sqft_per_sheet NUMERIC(8, 2) DEFAULT 32.00;
 
+-- Convert unit column to TEXT so any unit (sq_ft, sheet, kg, pcs, meter) is accepted
+ALTER TABLE materials ALTER COLUMN unit TYPE TEXT USING unit::TEXT;
+
 -- 6. MATERIALS
 INSERT INTO materials (id, name, category, grade, unit, hsn_code, thickness, thickness_unit, sheet_length, sheet_width, dimension_unit, sqft_per_sheet, current_stock, reorder_level, unit_cost, batch_tracking_enabled) VALUES
   ('d1111111-1111-1111-1111-111111111111', 'HDMR MDF Sheet 18mm (8ft x 4ft)', 'MDF', 'HDMR Exterior Grade', 'sq_ft', '4411', 18.00, 'mm', 8.00, 4.00, 'ft', 32.00, 640.00, 160.00, 85.00, true),
