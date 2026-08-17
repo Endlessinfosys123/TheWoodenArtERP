@@ -55,9 +55,11 @@ INSERT INTO clients (id, company_name, gstin, contact_person, phone, email, bill
 ON CONFLICT (id) DO NOTHING;
 
 -- 6. MATERIALS
-INSERT INTO materials (id, name, grade, unit, hsn_code, current_stock, reorder_level, unit_cost, batch_tracking_enabled) VALUES
-  ('d1111111-1111-1111-1111-111111111111', 'Aluminium Block 6061-T6', '6061-T6', 'kg', '7606', 450.00, 100.00, 320.00, true),
-  ('d2222222-2222-2222-2222-222222222222', 'Stainless Steel Round Bar 304', 'SS304', 'kg', '7222', 45.00, 80.00, 280.00, true),
-  ('d3333333-3333-3333-3333-333333333333', 'EN19 Alloy Steel Bar', 'EN19', 'kg', '7228', 120.00, 50.00, 195.00, true),
-  ('d4444444-4444-4444-4444-444444444444', 'Brass Rod Grade 1', 'C36000', 'kg', '7407', 30.00, 40.00, 550.00, true)
+INSERT INTO materials (id, name, category, grade, unit, hsn_code, thickness, thickness_unit, sheet_length, sheet_width, dimension_unit, sqft_per_sheet, current_stock, reorder_level, unit_cost, batch_tracking_enabled) VALUES
+  ('d1111111-1111-1111-1111-111111111111', 'HDMR MDF Sheet 18mm (8ft x 4ft)', 'MDF', 'HDMR Exterior Grade', 'sq_ft', '4411', 18.00, 'mm', 8.00, 4.00, 'ft', 32.00, 640.00, 160.00, 85.00, true),
+  ('d2222222-2222-2222-2222-222222222222', 'Corian Solid Surface Sheet 12mm (8ft x 4ft)', 'Corian', 'Polymer Acrylic Solid Surface', 'sq_ft', '3920', 12.00, 'mm', 8.00, 4.00, 'ft', 32.00, 320.00, 96.00, 280.00, true),
+  ('d3333333-3333-3333-3333-333333333333', 'Teak Wooden Plywood 19mm (8ft x 4ft)', 'Wooden', 'BWP Grade 710', 'sq_ft', '4412', 19.00, 'mm', 8.00, 4.00, 'ft', 32.00, 128.00, 200.00, 135.00, false),
+  ('d4444444-4444-4444-4444-444444444444', 'Mild Steel Sheet 2mm (8ft x 4ft)', 'MS', 'CRCA IS 513', 'kg', '7209', 2.00, 'mm', 8.00, 4.00, 'ft', 32.00, 450.00, 100.00, 75.00, true),
+  ('d5555555-5555-5555-5555-555555555555', 'Stainless Steel Sheet 304 3mm (8ft x 4ft)', 'SS', 'SS304 2B Finish', 'kg', '7219', 3.00, 'mm', 8.00, 4.00, 'ft', 32.00, 220.00, 80.00, 280.00, true),
+  ('d6666666-6666-6666-6666-666666666666', 'Cast Acrylic Sheet Clear 6mm (8ft x 4ft)', 'Acrylic', 'High Clarity PMMA', 'sq_ft', '3920', 6.00, 'mm', 8.00, 4.00, 'ft', 32.00, 192.00, 64.00, 165.00, true)
 ON CONFLICT (id) DO NOTHING;

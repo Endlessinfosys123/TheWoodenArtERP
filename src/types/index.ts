@@ -74,15 +74,46 @@ export interface VendorRateHistory {
 
 export type MaterialSourceType = 'own_stock' | 'client_supplied';
 
+export type MaterialCategory = 
+  | 'MDF' 
+  | 'Wooden' 
+  | 'Corian' 
+  | 'MS' 
+  | 'SS' 
+  | 'Acrylic' 
+  | 'Aluminium' 
+  | 'Brass'
+  | 'Other';
+
+export type MaterialUnit = 
+  | 'sq_ft' 
+  | 'sheet' 
+  | 'kg' 
+  | 'pcs' 
+  | 'mm' 
+  | 'inch' 
+  | 'meter' 
+  | 'sq_m';
+
+export type ThicknessUnit = 'mm' | 'inch';
+export type DimensionUnit = 'ft' | 'inch' | 'mm';
+
 export interface Material {
   id: string;
   name: string;
+  category: MaterialCategory;
   grade: string;
-  unit: 'kg' | 'pcs' | 'mm' | 'sheet' | 'meter';
+  unit: MaterialUnit;
   hsn_code: string;
-  current_stock: number; // Own stock qty
+  thickness: number;
+  thickness_unit: ThicknessUnit;
+  sheet_length?: number;
+  sheet_width?: number;
+  dimension_unit?: DimensionUnit;
+  sqft_per_sheet?: number;
+  current_stock: number; // Own stock qty in selected unit (e.g., sq_ft or sheet)
   reorder_level: number;
-  unit_cost: number;
+  unit_cost: number; // Rate per sq_ft / sheet / kg
   batch_tracking_enabled: boolean;
   created_at: string;
 }

@@ -126,9 +126,16 @@ CREATE TABLE IF NOT EXISTS vendor_rate_history (
 CREATE TABLE IF NOT EXISTS materials (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
+  category TEXT DEFAULT 'MDF',
   grade TEXT NOT NULL,
-  unit material_unit NOT NULL DEFAULT 'kg',
-  hsn_code TEXT NOT NULL DEFAULT '7606',
+  unit TEXT NOT NULL DEFAULT 'sq_ft',
+  hsn_code TEXT NOT NULL DEFAULT '4411',
+  thickness NUMERIC(8, 2) DEFAULT 18.00,
+  thickness_unit VARCHAR(10) DEFAULT 'mm',
+  sheet_length NUMERIC(8, 2) DEFAULT 8.00,
+  sheet_width NUMERIC(8, 2) DEFAULT 4.00,
+  dimension_unit VARCHAR(10) DEFAULT 'ft',
+  sqft_per_sheet NUMERIC(8, 2) DEFAULT 32.00,
   current_stock NUMERIC(10, 2) DEFAULT 0.00, -- Own Stock Qty
   reorder_level NUMERIC(10, 2) DEFAULT 50.00,
   unit_cost NUMERIC(10, 2) DEFAULT 0.00,

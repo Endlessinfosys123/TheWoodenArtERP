@@ -12,8 +12,10 @@ import {
   PlusCircle, 
   AlertTriangle,
   Clock,
-  DollarSign
+  DollarSign,
+  Database
 } from 'lucide-react';
+import { isSupabaseConfigured } from '@/lib/supabase/db';
 
 export default function Header() {
   const { 
@@ -27,6 +29,7 @@ export default function Header() {
   const [isDark, setIsDark] = useState<boolean>(true);
   const [showRoleDropdown, setShowRoleDropdown] = useState<boolean>(false);
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
+  const isDbLive = isSupabaseConfigured();
 
   const toggleTheme = () => {
     setIsDark(!isDark);
@@ -67,7 +70,16 @@ export default function Header() {
       </div>
 
       {/* Header Actions */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
+        {/* Supabase Database Connection Status Indicator */}
+        <div className={`px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1.5 ${
+          isDbLive 
+            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+            : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+        }`}>
+          <Database className="w-3.5 h-3.5 shrink-0" />
+          <span>{isDbLive ? 'Supabase Live' : 'Demo Local Mode'}</span>
+        </div>
         {/* Role Switcher Button */}
         <div className="relative">
           <button
