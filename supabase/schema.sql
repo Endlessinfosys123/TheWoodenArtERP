@@ -164,6 +164,15 @@ CREATE TABLE IF NOT EXISTS materials (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Ensure new columns are added if materials table already existed from previous schema run
+ALTER TABLE materials ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'MDF';
+ALTER TABLE materials ADD COLUMN IF NOT EXISTS thickness NUMERIC(8, 2) DEFAULT 18.00;
+ALTER TABLE materials ADD COLUMN IF NOT EXISTS thickness_unit VARCHAR(10) DEFAULT 'mm';
+ALTER TABLE materials ADD COLUMN IF NOT EXISTS sheet_length NUMERIC(8, 2) DEFAULT 8.00;
+ALTER TABLE materials ADD COLUMN IF NOT EXISTS sheet_width NUMERIC(8, 2) DEFAULT 4.00;
+ALTER TABLE materials ADD COLUMN IF NOT EXISTS dimension_unit VARCHAR(10) DEFAULT 'ft';
+ALTER TABLE materials ADD COLUMN IF NOT EXISTS sqft_per_sheet NUMERIC(8, 2) DEFAULT 32.00;
+
 CREATE TABLE IF NOT EXISTS material_inwards (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   ledger_type stock_ledger_type NOT NULL DEFAULT 'grn_inward',
