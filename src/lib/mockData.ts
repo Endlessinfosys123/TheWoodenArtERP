@@ -26,8 +26,16 @@ export const INITIAL_COMPANY_SETTINGS: CompanySettings = {
   email: 'operations@thewoodenart.com',
   bank_name: 'HDFC Bank Ltd',
   account_no: '50200049811204',
+  account_type: 'Current Account',
+  account_holder: 'The Wooden Art',
   ifsc_code: 'HDFC0000241',
   branch: 'MIDC Bhosari Pune Branch',
+  payment_qr_url: '',
+  payment_terms: [
+    '100% payment is required before delivery. Delivery will be scheduled after payment confirmation.',
+    'Goods once delivered will not be returned or exchanged, except in case of manufacturing defects.',
+    'Please verify all order details before payment.',
+  ],
 
   // Security & Passcode Defaults
   passcode_enabled: false,
@@ -585,7 +593,7 @@ export const INITIAL_INVOICES: Invoice[] = [
     due_date: '2026-09-09',
     created_at: '2026-08-10T15:00:00Z',
     items: [
-      { id: 'ii-1', job_no: 'JOB-2026-001', description: 'CNC Job Work Charges for Hydraulic Aerospace Flange (Client Material)', hsn_sac: '9988', qty: 25, rate: 1525.42, amount: 38135.59 },
+      { id: 'ii-1', description: 'HDMR MDF 18mm CNC Router 2D Design Cutting Job', sqft: 32, rate: 85, amount: 2720, qty: 5, total: 13600 },
     ],
   },
   {
@@ -618,7 +626,7 @@ export const INITIAL_INVOICES: Invoice[] = [
     due_date: '2026-08-29',
     created_at: '2026-08-14T12:00:00Z',
     items: [
-      { id: 'ii-2', job_no: 'JOB-2026-002', description: 'Piston Manifold Block (Aluminium 6061 Material + Machining)', hsn_sac: '8412', qty: 10, rate: 2500, amount: 25000 },
+      { id: 'ii-2', description: 'Acrylic 6mm Laser Engraving & Letter Cutting Work', sqft: 16, rate: 120, amount: 1920, qty: 3, total: 5760 },
     ],
   },
 ];

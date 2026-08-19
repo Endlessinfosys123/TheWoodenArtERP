@@ -307,12 +307,12 @@ export type InvoiceStatus = 'draft' | 'unpaid' | 'partially_paid' | 'paid' | 'ca
 
 export interface InvoiceItem {
   id: string;
-  job_no: string;
   description: string;
-  hsn_sac: string;
-  qty: number;
-  rate: number;
-  amount: number;
+  sqft: number; // Sq/Ft
+  rate: number; // Rate (₹/SqFt)
+  amount: number; // Sq/Ft * Rate
+  qty: number; // Quantity of pieces
+  total: number; // Amount * Qty
 }
 
 export interface Invoice {
@@ -321,6 +321,8 @@ export interface Invoice {
   financial_year: string; // e.g., FY 2026-27
   client_id: string;
   client_name?: string;
+  client_phone?: string;
+  client_address?: string;
   client_gstin?: string;
   client_state_code?: string;
   dispatch_id?: string;
@@ -373,10 +375,16 @@ export interface CompanySettings {
   phone: string;
   email: string;
   logo_url?: string;
+
+  // Bank & Payment QR Details
   bank_name?: string;
   account_no?: string;
+  account_type?: string; // e.g. "Current Account"
+  account_holder?: string; // e.g. "The Wooden Art"
   ifsc_code?: string;
   branch?: string;
+  payment_qr_url?: string; // Uploaded Payment QR Code Image Data URL / Web URL
+  payment_terms?: string[];
 
   // Security & 4-Digit Passcode Lock
   passcode_enabled?: boolean;

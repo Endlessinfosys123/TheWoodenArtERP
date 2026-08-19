@@ -21,7 +21,8 @@ import {
   Sliders,
   Check,
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  QrCode
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -460,6 +461,28 @@ export default function SettingsPage() {
               </div>
 
               <div>
+                <label className="font-semibold block mb-1">Account Holder Name</label>
+                <input
+                  type="text"
+                  value={formData.account_holder || ''}
+                  onChange={(e) => setFormData({ ...formData, account_holder: e.target.value })}
+                  placeholder="e.g. The Wooden Art"
+                  className="w-full p-2.5 bg-muted/50 border border-border rounded-xl text-foreground font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold block mb-1">Account Type</label>
+                <input
+                  type="text"
+                  value={formData.account_type || ''}
+                  onChange={(e) => setFormData({ ...formData, account_type: e.target.value })}
+                  placeholder="e.g. Current Account / Savings Account"
+                  className="w-full p-2.5 bg-muted/50 border border-border rounded-xl text-foreground"
+                />
+              </div>
+
+              <div>
                 <label className="font-semibold block mb-1">Bank Name</label>
                 <input
                   type="text"
@@ -497,6 +520,59 @@ export default function SettingsPage() {
                   onChange={(e) => setFormData({ ...formData, branch: e.target.value })}
                   className="w-full p-2.5 bg-muted/50 border border-border rounded-xl text-foreground"
                 />
+              </div>
+            </div>
+
+            {/* Payment QR Code Image Upload Box */}
+            <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex flex-col sm:flex-row items-center gap-4">
+              <div className="w-24 h-24 rounded-xl bg-white border-2 border-emerald-500/30 flex items-center justify-center overflow-hidden shrink-0 shadow-md">
+                {formData.payment_qr_url ? (
+                  <img src={formData.payment_qr_url} alt="Payment QR Code" className="w-full h-full object-contain p-1" />
+                ) : (
+                  <div className="text-center p-2 text-slate-400">
+                    <QrCode className="w-8 h-8 mx-auto" />
+                    <span className="text-[9px] block mt-1 font-bold">No QR Code</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2 flex-1 w-full text-xs">
+                <label className="font-bold text-foreground block">Payment UPI / Bank QR Code Image</label>
+                <p className="text-[11px] text-muted-foreground">
+                  Upload your GPay / PhonePe / Paytm / Bank QR Code image to be printed on every client invoice.
+                </p>
+
+                <div className="flex items-center gap-2">
+                  <label className="cursor-pointer px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-semibold flex items-center gap-1.5 hover:bg-emerald-500 transition shadow-sm">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Upload QR Image</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            setFormData(prev => ({ ...prev, payment_qr_url: reader.result as string }));
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </label>
+
+                  {formData.payment_qr_url && (
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, payment_qr_url: '' }))}
+                      className="px-3 py-1.5 rounded-lg border border-rose-500/30 text-rose-400 font-semibold hover:bg-rose-500/10 transition"
+                    >
+                      Remove QR
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
