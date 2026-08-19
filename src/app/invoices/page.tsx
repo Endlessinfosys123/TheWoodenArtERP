@@ -670,8 +670,48 @@ export default function InvoicesPage() {
             {/* PRINTABLE BOXED LAYOUT (MATCHING SAMPLE IMAGE) */}
             <div className="p-6 bg-white text-black rounded-xl border-2 border-black space-y-0 text-xs font-sans">
               
+              {/* COMPANY BRANDING & LOGO HEADER BLOCK */}
+              <div className="border-2 border-b-0 border-black p-4 flex items-center justify-between gap-4 bg-white">
+                {/* Left: Company Logo Image */}
+                <div className="w-24 h-20 flex items-center justify-center shrink-0 overflow-hidden">
+                  {companySettings?.logo_url ? (
+                    <img src={companySettings.logo_url} alt="Company Logo" className="w-full h-full object-contain" />
+                  ) : (
+                    <div className="w-20 h-16 bg-slate-900 text-white font-black text-xl rounded flex items-center justify-center shadow-sm">
+                      {companySettings?.company_name ? companySettings.company_name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase() : 'ERP'}
+                    </div>
+                  )}
+                </div>
+
+                {/* Center: Company Details */}
+                <div className="text-center flex-1 space-y-0.5">
+                  <h1 className="text-xl font-black uppercase tracking-tight text-slate-900">
+                    {companySettings?.company_name || 'THE WOODEN ART'}
+                  </h1>
+                  {companySettings?.trade_name && (
+                    <p className="text-[11px] font-bold text-slate-700 italic">({companySettings.trade_name})</p>
+                  )}
+                  <p className="text-[11px] text-slate-800 font-semibold max-w-md mx-auto leading-tight">{companySettings?.address}</p>
+                  <p className="text-[11px] text-slate-800">
+                    Phone: <strong>{companySettings?.phone}</strong> | Email: <strong>{companySettings?.email}</strong>
+                  </p>
+                  <p className="text-[11px] font-bold text-slate-900">
+                    GSTIN: <span className="font-mono">{companySettings?.gstin}</span> | State: {companySettings?.state_name} ({companySettings?.state_code})
+                  </p>
+                </div>
+
+                {/* Right: Tax Invoice Badge & Invoice Serial */}
+                <div className="text-right text-[11px] shrink-0 border-l-2 border-black pl-4 py-1 space-y-1">
+                  <span className="inline-block px-2.5 py-1 bg-slate-900 text-white font-black text-xs uppercase rounded">
+                    TAX INVOICE
+                  </span>
+                  <p className="font-mono font-bold text-xs text-slate-900 mt-1">INV: {selectedInvoice.invoice_no}</p>
+                  <p className="text-slate-700 font-semibold">{selectedInvoice.financial_year}</p>
+                </div>
+              </div>
+
               {/* TOP HEADER: INVOICE */}
-              <div className="border-2 border-black text-center py-2 text-xl font-black uppercase tracking-wider bg-slate-100">
+              <div className="border-2 border-black text-center py-1.5 text-lg font-black uppercase tracking-wider bg-slate-100">
                 INVOICE
               </div>
 
