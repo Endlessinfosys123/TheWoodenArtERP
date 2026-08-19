@@ -646,8 +646,8 @@ export default function InvoicesPage() {
       {/* PRINTABLE INVOICE DOCUMENT (100% MATCHING USER'S SAMPLE IMAGE) */}
       {selectedInvoice && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-card border border-border rounded-3xl max-w-4xl w-full p-6 shadow-2xl space-y-6 animate-in fade-in zoom-in-95 no-print my-8">
-            <div className="flex items-center justify-between border-b border-border pb-4">
+          <div className="bg-card border border-border rounded-3xl max-w-4xl w-full p-6 shadow-2xl space-y-6 animate-in fade-in zoom-in-95 my-8">
+            <div className="flex items-center justify-between border-b border-border pb-4 no-print">
               <div>
                 <h3 className="font-extrabold text-base text-foreground flex items-center gap-2">
                   <Printer className="w-5 h-5 text-primary" /> Invoice Document Print Preview
@@ -668,7 +668,7 @@ export default function InvoicesPage() {
             </div>
 
             {/* PRINTABLE BOXED LAYOUT (MATCHING SAMPLE IMAGE) */}
-            <div className="p-6 bg-white text-black rounded-xl border-2 border-black space-y-0 text-xs font-sans">
+            <div className="printable-invoice p-6 bg-white text-black rounded-xl border-2 border-black space-y-0 text-xs font-sans">
               
               {/* COMPANY BRANDING & LOGO HEADER BLOCK */}
               <div className="border-2 border-b-0 border-black p-4 flex items-center justify-between gap-4 bg-white">
