@@ -529,3 +529,10 @@ export async function insertPayment(payment: Payment): Promise<void> {
   const { error } = await supabase.from('payments').insert([payload]);
   if (error) console.error('[Supabase Error - insertPayment]:', error);
 }
+
+export async function deleteRowFromTableDb(table: string, id: string): Promise<void> {
+  const supabase = createClient();
+  if (!supabase) return;
+  const { error } = await supabase.from(table).delete().eq('id', id);
+  if (error) console.error(`[Supabase Error - delete ${table}]:`, error);
+}

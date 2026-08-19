@@ -19,18 +19,65 @@ import {
   FileText, 
   Wrench, 
   FileCode2, 
-  UserPlus
+  UserPlus,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 
 export default function ClientsPage() {
-  const { clients, jobOrders, invoices, payments, addClient, updateClient, addContactPerson } = useErp();
+  const { clients, jobOrders, invoices, payments, addClient, updateClient, deleteClient, addContactPerson } = useErp();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
 
-  // Modals
+  // Modals & Editing
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingClientId, setEditingClientId] = useState<string | null>(null);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
+
+  const handleOpenAddClient = () => {
+    setEditingClientId(null);
+    setClientForm({
+      company_name: '',
+      gstin: '',
+      contact_person: '',
+      phone: '',
+      email: '',
+      billing_address: '',
+      shipping_address: '',
+      city: 'Pune',
+      state_code: '27',
+      state_name: 'Maharashtra',
+      credit_terms: '30 Days Net',
+      payment_due_days: 30,
+      credit_limit: 500000,
+      status: 'active',
+      contact_persons: [],
+    });
+    setIsAddModalOpen(true);
+  };
+
+  const handleOpenEditClient = (c: Client) => {
+    setEditingClientId(c.id);
+    setClientForm({
+      company_name: c.company_name || '',
+      gstin: c.gstin || '',
+      contact_person: c.contact_person || '',
+      phone: c.phone || '',
+      email: c.email || '',
+      billing_address: c.billing_address || '',
+      shipping_address: c.shipping_address || '',
+      city: c.city || 'Pune',
+      state_code: c.state_code || '27',
+      state_name: c.state_name || 'Maharashtra',
+      credit_terms: c.credit_terms || '30 Days Net',
+      payment_due_days: c.payment_due_days || 30,
+      credit_limit: c.credit_limit || 500000,
+      status: c.status || 'active',
+      contact_persons: c.contact_persons || [],
+    });
+    setIsAddModalOpen(true);
+  };
 
   // Client Form
   const [clientForm, setClientForm] = useState({
@@ -73,25 +120,30 @@ export default function ClientsPage() {
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
-  const handleCreateSubmit = async (e: React.FormEvent) => {
+  const handleClientSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!clientForm.company_name) return;
 
     setIsSubmitting(true);
     setErrorMsg('');
     try {
-      await addClient({
-        ...clientForm,
-        gstin: clientForm.gstin || '27URP0000000000',
-        contact_persons: clientForm.contact_person 
-          ? [{ id: `cp-${Date.now()}`, name: clientForm.contact_person, designation: 'Primary Contact', phone: clientForm.phone || '+91 00000 00000', email: clientForm.email || 'info@client.com' }]
-          : [],
-      });
+      if (editingClientId) {
+        updateClient(editingClientId, clientForm);
+        setSuccessMsg(`Client "${clientForm.company_name}" updated successfully!`);
+      } else {
+        await addClient({
+          ...clientForm,
+          gstin: clientForm.gstin || '27URP0000000000',
+          contact_persons: clientForm.contact_person 
+            ? [{ id: `cp-${Date.now()}`, name: clientForm.contact_person, designation: 'Primary Contact', phone: clientForm.phone || '+91 00000 00000', email: clientForm.email || 'info@client.com' }]
+            : [],
+        });
+        setSuccessMsg(`Client "${clientForm.company_name}" added successfully!`);
+      }
 
-      setSuccessMsg(`Client "${clientForm.company_name}" added successfully and synced with Supabase!`);
       setTimeout(() => setSuccessMsg(''), 4000);
-
       setIsAddModalOpen(false);
+      setEditingClientId(null);
       setClientForm({
         company_name: '',
         gstin: '',
@@ -145,7 +197,7 @@ export default function ClientsPage() {
           </p>
         </div>
         <button
-          onClick={() => setIsAddModalOpen(true)}
+          onClick={handleOpenAddClient}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold text-xs shadow-md shadow-primary/20 hover:bg-primary/90 transition"
         >
           <Plus className="w-4 h-4" />
@@ -247,15 +299,35 @@ export default function ClientsPage() {
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-border mt-4 flex items-center justify-between">
-                <span className="text-[10px] text-muted-foreground">{client.contact_persons?.length || 1} Contact(s)</span>
+              <div className="pt-4 border-t border-border mt-4 flex items-center justify-between gap-2">
                 <button
                   onClick={() => setSelectedClient(client)}
-                  className="px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-semibold text-primary flex items-center gap-1 transition"
+                  className="px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-semibold text-primary flex items-center gap-1 transition"
+                  title="View Ledger & Orders"
                 >
                   <History className="w-3.5 h-3.5" />
-                  <span>View Ledger & Orders</span>
+                  <span className="hidden sm:inline">Ledger</span>
                 </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => handleOpenEditClient(client)}
+                    className="p-1.5 rounded-lg border border-border bg-muted/40 hover:bg-amber-500/10 text-amber-500 font-semibold transition"
+                    title="Edit Client Master"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Are you sure you want to delete client ${client.company_name}?`)) {
+                        deleteClient(client.id);
+                      }
+                    }}
+                    className="p-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-semibold transition"
+                    title="Delete Client"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
           );
@@ -281,7 +353,7 @@ export default function ClientsPage() {
               </div>
             )}
 
-            <form onSubmit={handleCreateSubmit} className="space-y-3 text-xs">
+            <form onSubmit={handleClientSubmit} className="space-y-3 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="font-semibold block mb-1">Company / Client Name *</label>

@@ -64,7 +64,8 @@ import {
   fetchInvoices,
   insertInvoice,
   fetchPayments,
-  insertPayment
+  insertPayment,
+  deleteRowFromTableDb
 } from '@/lib/supabase/db';
 
 interface ErpContextType {
@@ -89,15 +90,19 @@ interface ErpContextType {
   // Client actions
   addClient: (clientData: Omit<Client, 'id' | 'created_at' | 'outstanding_balance'>) => void;
   updateClient: (id: string, clientData: Partial<Client>) => void;
+  deleteClient: (id: string) => void;
   addContactPerson: (clientId: string, contact: { name: string; designation: string; phone: string; email: string }) => void;
 
   // Vendor actions
   addVendor: (vendorData: Omit<Vendor, 'id' | 'created_at' | 'outstanding_payable'>) => void;
   updateVendor: (id: string, vendorData: Partial<Vendor>) => void;
+  deleteVendor: (id: string) => void;
   addVendorRate: (rateData: Omit<VendorRateHistory, 'id'>) => void;
 
   // Material actions
   addMaterial: (materialData: Omit<Material, 'id' | 'created_at' | 'current_stock'>) => void;
+  updateMaterial: (id: string, materialData: Partial<Material>) => void;
+  deleteMaterial: (id: string) => void;
   addStockLedgerEntry: (inwardData: Omit<MaterialInward, 'id' | 'created_at'>) => void;
 
   // Drawing Vault actions
@@ -109,17 +114,22 @@ interface ErpContextType {
   // Job Order actions
   createJobOrder: (jobData: Omit<JobOrder, 'id' | 'job_no' | 'qr_code_token' | 'created_at' | 'files' | 'audit_logs'>) => void;
   updateJobStatus: (id: string, status: JobStatus, remarks?: string) => void;
+  deleteJobOrder: (id: string) => void;
   addSubOperation: (jobId: string, subOp: Omit<SubOperation, 'id'>) => void;
   updateSubOpStatus: (jobId: string, subOpId: string, status: 'pending' | 'in_progress' | 'completed', actualMin?: number) => void;
 
   // QC actions
   addQCCheck: (qcData: Omit<QCCheck, 'id' | 'checked_at'>) => void;
+  deleteQCCheck: (id: string) => void;
 
   // Dispatch & Delivery Challan actions
   createDispatch: (dispatchData: Omit<Dispatch, 'id' | 'challan_no' | 'created_at'>) => void;
+  deleteDispatch: (id: string) => void;
 
   // Invoice & Payment actions
   createInvoice: (invoiceData: Omit<Invoice, 'id' | 'invoice_no' | 'financial_year' | 'created_at'>) => void;
+  updateInvoice: (id: string, invoiceData: Partial<Invoice>) => void;
+  deleteInvoice: (id: string) => void;
   recordPayment: (paymentData: Omit<Payment, 'id' | 'created_at'>) => void;
 
   // System Setup & Lock Actions
@@ -672,6 +682,49 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
   const lockErp = () => setIsLocked(true);
   const unlockErp = () => setIsLocked(false);
 
+  const deleteClient = (id: string) => {
+    setClients(prev => prev.filter(c => c.id !== id));
+    deleteRowFromTableDb('clients', id);
+  };
+
+  const deleteVendor = (id: string) => {
+    setVendors(prev => prev.filter(v => v.id !== id));
+    deleteRowFromTableDb('vendors', id);
+  };
+
+  const updateMaterial = (id: string, materialData: Partial<Material>) => {
+    setMaterials(prev => prev.map(m => m.id === id ? { ...m, ...materialData } : m));
+  };
+
+  const deleteMaterial = (id: string) => {
+    setMaterials(prev => prev.filter(m => m.id !== id));
+    deleteRowFromTableDb('materials', id);
+  };
+
+  const deleteJobOrder = (id: string) => {
+    setJobOrders(prev => prev.filter(j => j.id !== id));
+    deleteRowFromTableDb('job_orders', id);
+  };
+
+  const deleteQCCheck = (id: string) => {
+    setQcChecks(prev => prev.filter(q => q.id !== id));
+    deleteRowFromTableDb('qc_checks', id);
+  };
+
+  const deleteDispatch = (id: string) => {
+    setDispatches(prev => prev.filter(d => d.id !== id));
+    deleteRowFromTableDb('dispatches', id);
+  };
+
+  const updateInvoice = (id: string, invoiceData: Partial<Invoice>) => {
+    setInvoices(prev => prev.map(i => i.id === id ? { ...i, ...invoiceData } : i));
+  };
+
+  const deleteInvoice = (id: string) => {
+    setInvoices(prev => prev.filter(i => i.id !== id));
+    deleteRowFromTableDb('invoices', id);
+  };
+
   return (
     <ErpContext.Provider
       value={{
@@ -692,11 +745,15 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
         payments,
         addClient,
         updateClient,
+        deleteClient,
         addContactPerson,
         addVendor,
         updateVendor,
+        deleteVendor,
         addVendorRate,
         addMaterial,
+        updateMaterial,
+        deleteMaterial,
         addStockLedgerEntry,
         addDrawingVersion,
         updateDrawingStatus,
@@ -704,11 +761,16 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
         rollbackDrawingVersion,
         createJobOrder,
         updateJobStatus,
+        deleteJobOrder,
         addSubOperation,
         updateSubOpStatus,
         addQCCheck,
+        deleteQCCheck,
         createDispatch,
+        deleteDispatch,
         createInvoice,
+        updateInvoice,
+        deleteInvoice,
         recordPayment,
         resetToFreshInstance,
         isLocked,

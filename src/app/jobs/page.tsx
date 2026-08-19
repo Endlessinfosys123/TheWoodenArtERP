@@ -28,7 +28,8 @@ import {
   BarChart2,
   Calendar,
   RotateCcw,
-  CheckSquare
+  CheckSquare,
+  Trash2
 } from 'lucide-react';
 
 export default function JobsPage() {
@@ -39,6 +40,7 @@ export default function JobsPage() {
     machines, 
     createJobOrder, 
     updateJobStatus, 
+    deleteJobOrder,
     addSubOperation,
     updateSubOpStatus,
     currentUser 
@@ -302,16 +304,29 @@ export default function JobsPage() {
                     {job.files?.length || 0} File Attachment(s)
                   </span>
                 </div>
-                <button
-                  onClick={() => {
-                    setSelectedJob(job);
-                    setIsDrawingVaultOpen(true);
-                  }}
-                  className="px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-semibold text-primary flex items-center gap-1 transition"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>Drawing Vault & 3D CAD</span>
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => {
+                      setSelectedJob(job);
+                      setIsDrawingVaultOpen(true);
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-semibold text-primary flex items-center gap-1 transition"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Drawing Vault</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Are you sure you want to delete Job Order ${job.job_no}?`)) {
+                        deleteJobOrder(job.id);
+                      }
+                    }}
+                    className="p-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-semibold transition"
+                    title="Delete Job Order"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
           ))}

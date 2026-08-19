@@ -29,20 +29,63 @@ import {
   Database,
   Layers,
   Ruler,
-  Maximize2
+  Maximize2,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 
 export default function MaterialsPage() {
-  const { materials, materialInwards, clients, jobOrders, addMaterial, addStockLedgerEntry } = useErp();
+  const { materials, materialInwards, clients, jobOrders, addMaterial, updateMaterial, deleteMaterial, addStockLedgerEntry } = useErp();
   const [activeTab, setActiveTab] = useState<'stock_pools' | 'stock_ledger'>('stock_pools');
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [notifySimulated, setNotifySimulated] = useState(false);
   const isDbConfigured = isSupabaseConfigured();
 
-  // Modals
+  // Modals & Editing
   const [isAddMaterialOpen, setIsAddMaterialOpen] = useState(false);
+  const [editingMaterialId, setEditingMaterialId] = useState<string | null>(null);
   const [isInwardModalOpen, setIsInwardModalOpen] = useState(false);
+
+  const handleOpenAddMaterial = () => {
+    setEditingMaterialId(null);
+    setMatForm({
+      name: '',
+      category: 'MDF',
+      grade: 'HDMR (Action Tesa)',
+      thickness: 18,
+      thickness_unit: 'mm',
+      sheet_length: 8,
+      sheet_width: 4,
+      dimension_unit: 'ft',
+      unit: 'sq_ft',
+      unit_cost: 85,
+      reorder_level: 150,
+      hsn_code: '4411',
+      batch_tracking_enabled: true,
+    });
+    setIsAddMaterialOpen(true);
+  };
+
+  const handleOpenEditMaterial = (m: Material) => {
+    setEditingMaterialId(m.id);
+    setMatForm({
+      name: m.name || '',
+      category: m.category || 'MDF',
+      grade: m.grade || 'Standard',
+      thickness: m.thickness || 18,
+      thickness_unit: m.thickness_unit || 'mm',
+      sheet_length: m.sheet_length || 8,
+      sheet_width: m.sheet_width || 4,
+      dimension_unit: m.dimension_unit || 'ft',
+      unit: m.unit || 'sq_ft',
+      unit_cost: m.unit_cost || 85,
+      reorder_level: m.reorder_level || 150,
+      hsn_code: m.hsn_code || '4411',
+      batch_tracking_enabled: m.batch_tracking_enabled ?? true,
+    });
+    setIsAddMaterialOpen(true);
+  };
 
   // Advanced CNC Material Form State
   const [matForm, setMatForm] = useState<{
@@ -177,24 +220,44 @@ export default function MaterialsPage() {
 
     const sqft = computeSqFtPerSheet(matForm.sheet_length, matForm.sheet_width, matForm.dimension_unit);
 
-    await addMaterial({
-      name: matForm.name,
-      category: matForm.category,
-      grade: matForm.grade || 'Standard Grade',
-      unit: matForm.unit,
-      hsn_code: matForm.hsn_code || '4411',
-      thickness: Number(matForm.thickness) || 18,
-      thickness_unit: matForm.thickness_unit || 'mm',
-      sheet_length: Number(matForm.sheet_length) || 8,
-      sheet_width: Number(matForm.sheet_width) || 4,
-      dimension_unit: matForm.dimension_unit || 'ft',
-      sqft_per_sheet: sqft || 32,
-      reorder_level: Number(matForm.reorder_level) || 50,
-      unit_cost: Number(matForm.unit_cost) || 0,
-      batch_tracking_enabled: matForm.batch_tracking_enabled,
-    });
+    if (editingMaterialId) {
+      updateMaterial(editingMaterialId, {
+        name: matForm.name,
+        category: matForm.category,
+        grade: matForm.grade || 'Standard Grade',
+        unit: matForm.unit,
+        hsn_code: matForm.hsn_code || '4411',
+        thickness: Number(matForm.thickness) || 18,
+        thickness_unit: matForm.thickness_unit || 'mm',
+        sheet_length: Number(matForm.sheet_length) || 8,
+        sheet_width: Number(matForm.sheet_width) || 4,
+        dimension_unit: matForm.dimension_unit || 'ft',
+        sqft_per_sheet: sqft || 32,
+        reorder_level: Number(matForm.reorder_level) || 50,
+        unit_cost: Number(matForm.unit_cost) || 0,
+        batch_tracking_enabled: matForm.batch_tracking_enabled,
+      });
+    } else {
+      await addMaterial({
+        name: matForm.name,
+        category: matForm.category,
+        grade: matForm.grade || 'Standard Grade',
+        unit: matForm.unit,
+        hsn_code: matForm.hsn_code || '4411',
+        thickness: Number(matForm.thickness) || 18,
+        thickness_unit: matForm.thickness_unit || 'mm',
+        sheet_length: Number(matForm.sheet_length) || 8,
+        sheet_width: Number(matForm.sheet_width) || 4,
+        dimension_unit: matForm.dimension_unit || 'ft',
+        sqft_per_sheet: sqft || 32,
+        reorder_level: Number(matForm.reorder_level) || 50,
+        unit_cost: Number(matForm.unit_cost) || 0,
+        batch_tracking_enabled: matForm.batch_tracking_enabled,
+      });
+    }
 
     setIsAddMaterialOpen(false);
+    setEditingMaterialId(null);
   };
 
   const handleLedgerSubmit = (e: React.FormEvent) => {
@@ -389,6 +452,7 @@ export default function MaterialsPage() {
                     <th className="p-3">Unit Cost (₹)</th>
                     <th className="p-3">Valuation</th>
                     <th className="p-3">Status</th>
+                    <th className="p-3 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -456,6 +520,28 @@ export default function MaterialsPage() {
                               <CheckCircle2 className="w-3 h-3" /> Healthy
                             </span>
                           )}
+                        </td>
+                        <td className="p-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => handleOpenEditMaterial(mat)}
+                              className="p-1.5 rounded-lg border border-border bg-muted/40 hover:bg-amber-500/10 text-amber-500 font-semibold transition"
+                              title="Edit Material"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm(`Are you sure you want to delete material ${mat.name}?`)) {
+                                  deleteMaterial(mat.id);
+                                }
+                              }}
+                              className="p-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-semibold transition"
+                              title="Delete Material"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

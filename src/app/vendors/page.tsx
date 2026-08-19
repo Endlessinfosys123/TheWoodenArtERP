@@ -18,18 +18,53 @@ import {
   CheckCircle2, 
   AlertCircle,
   FileText,
-  DollarSign
+  DollarSign,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 
 export default function VendorsPage() {
-  const { vendors, vendorRates, materialInwards, addVendor, updateVendor, addVendorRate } = useErp();
+  const { vendors, vendorRates, materialInwards, addVendor, updateVendor, deleteVendor, addVendorRate } = useErp();
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
 
-  // Modals
+  // Modals & Editing
   const [isAddVendorOpen, setIsAddVendorOpen] = useState(false);
+  const [editingVendorId, setEditingVendorId] = useState<string | null>(null);
   const [isAddRateOpen, setIsAddRateOpen] = useState(false);
+
+  const handleOpenAddVendor = () => {
+    setEditingVendorId(null);
+    setVendorForm({
+      vendor_name: '',
+      gstin: '',
+      category: 'raw_material',
+      contact_person: '',
+      phone: '',
+      email: '',
+      address: '',
+      city: 'Pune',
+      state_code: '27',
+    });
+    setIsAddVendorOpen(true);
+  };
+
+  const handleOpenEditVendor = (v: Vendor) => {
+    setEditingVendorId(v.id);
+    setVendorForm({
+      vendor_name: v.vendor_name || '',
+      gstin: v.gstin || '',
+      category: v.category || 'raw_material',
+      contact_person: v.contact_person || '',
+      phone: v.phone || '',
+      email: v.email || '',
+      address: v.address || '',
+      city: v.city || 'Pune',
+      state_code: v.state_code || '27',
+    });
+    setIsAddVendorOpen(true);
+  };
 
   // New Vendor Form
   const [vendorForm, setVendorForm] = useState({
@@ -61,27 +96,21 @@ export default function VendorsPage() {
     return matchesSearch && matchesCat;
   });
 
-  const handleAddVendorSubmit = async (e: React.FormEvent) => {
+  const handleVendorSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!vendorForm.vendor_name) return;
 
-    await addVendor({
-      ...vendorForm,
-      gstin: vendorForm.gstin || '27URP0000000000',
-    });
+    if (editingVendorId) {
+      updateVendor(editingVendorId, vendorForm);
+    } else {
+      addVendor({
+        ...vendorForm,
+        gstin: vendorForm.gstin || '27URP0000000000',
+      });
+    }
 
-    setVendorForm({
-      vendor_name: '',
-      gstin: '',
-      category: 'raw_material',
-      contact_person: '',
-      phone: '',
-      email: '',
-      city: '',
-      state_code: '27',
-      address: '',
-    });
     setIsAddVendorOpen(false);
+    setEditingVendorId(null);
   };
 
   const handleAddRateSubmit = (e: React.FormEvent) => {
@@ -127,7 +156,7 @@ export default function VendorsPage() {
           </p>
         </div>
         <button
-          onClick={() => setIsAddVendorOpen(true)}
+          onClick={handleOpenAddVendor}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold text-xs shadow-md shadow-primary/20 hover:bg-primary/90 transition"
         >
           <Plus className="w-4 h-4" />
@@ -212,14 +241,35 @@ export default function VendorsPage() {
               </div>
             </div>
 
-            <div className="pt-4 border-t border-border mt-4 flex items-center justify-end">
+            <div className="pt-4 border-t border-border mt-4 flex items-center justify-between gap-2">
               <button
                 onClick={() => setSelectedVendor(vendor)}
-                className="px-3.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-semibold text-primary flex items-center gap-1.5 transition"
+                className="px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-semibold text-primary flex items-center gap-1 transition"
+                title="View Purchase Ledger & Rates"
               >
                 <History className="w-3.5 h-3.5" />
-                <span>View Purchase Ledger & Rates</span>
+                <span className="hidden sm:inline">Ledger</span>
               </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => handleOpenEditVendor(vendor)}
+                  className="p-1.5 rounded-lg border border-border bg-muted/40 hover:bg-amber-500/10 text-amber-500 font-semibold transition"
+                  title="Edit Vendor Master"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirm(`Are you sure you want to delete vendor ${vendor.vendor_name}?`)) {
+                      deleteVendor(vendor.id);
+                    }
+                  }}
+                  className="p-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-semibold transition"
+                  title="Delete Vendor"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </div>
         ))}
@@ -238,7 +288,7 @@ export default function VendorsPage() {
               </button>
             </div>
 
-            <form onSubmit={handleAddVendorSubmit} className="space-y-3 text-xs">
+            <form onSubmit={handleVendorSubmit} className="space-y-3 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="font-semibold block mb-1">Vendor / Firm Name *</label>

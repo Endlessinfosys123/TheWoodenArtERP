@@ -21,18 +21,20 @@ import {
   ArrowUpRight,
   Upload,
   QrCode,
+  Pencil,
   Trash2
 } from 'lucide-react';
 
 export default function InvoicesPage() {
-  const { invoices, payments, clients, jobOrders, companySettings, updateCompanySettings, createInvoice, recordPayment } = useErp();
+  const { invoices, payments, clients, jobOrders, companySettings, updateCompanySettings, createInvoice, updateInvoice, deleteInvoice, recordPayment } = useErp();
   const [activeTab, setActiveTab] = useState<'invoices' | 'payments' | 'aging'>('invoices');
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  // Modals
+  // Modals & Editing
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
 
@@ -51,6 +53,38 @@ export default function InvoicesPage() {
     due_date: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     hsn_sac_code: companySettings?.hsn_default || '4411',
   });
+
+  const handleOpenCreateInvoice = () => {
+    setEditingInvoiceId(null);
+    setInvForm({
+      client_id: clients[0]?.id || '',
+      job_order_id: jobOrders[0]?.id || '',
+      order_no: jobOrders[0]?.job_no || 'JOB-2026-001',
+      invoice_date: new Date().toISOString().split('T')[0],
+      due_date: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      hsn_sac_code: companySettings?.hsn_default || '4411',
+    });
+    setItems([
+      { description: 'HDMR MDF 18mm CNC Router 2D Design Cutting Job', sqft: 32, rate: 85, amount: 2720, qty: 5, total: 13600 },
+    ]);
+    setIsInvoiceModalOpen(true);
+  };
+
+  const handleOpenEditInvoice = (inv: Invoice) => {
+    setEditingInvoiceId(inv.id);
+    setInvForm({
+      client_id: inv.client_id,
+      job_order_id: inv.job_order_id || '',
+      order_no: inv.job_no || 'JOB-2026-001',
+      invoice_date: inv.invoice_date,
+      due_date: inv.due_date,
+      hsn_sac_code: inv.hsn_sac_code,
+    });
+    if (inv.items && inv.items.length > 0) {
+      setItems(inv.items.map(({ id, ...rest }) => rest));
+    }
+    setIsInvoiceModalOpen(true);
+  };
 
   // Selected Client Quick Object
   const selectedClient = clients.find(c => c.id === invForm.client_id) || clients[0];
@@ -101,40 +135,60 @@ export default function InvoicesPage() {
     });
   };
 
-  // Submit Invoice Creation
+  // Submit Invoice Creation or Update
   const handleCreateInvoiceSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!invForm.client_id) return;
 
-    createInvoice({
-      client_id: invForm.client_id,
-      client_name: selectedClient?.company_name || 'Client',
-      client_phone: selectedClient?.phone || '+91 98000 00000',
-      client_address: `${selectedClient?.billing_address || ''}, ${selectedClient?.city || ''}`,
-      client_gstin: selectedClient?.gstin || '',
-      job_order_id: invForm.job_order_id,
-      job_no: invForm.order_no,
-      invoice_type: 'material_and_labour',
-      hsn_sac_code: invForm.hsn_sac_code,
-      labour_amount: subTotalAmount,
-      material_amount: 0,
-      subtotal: subTotalAmount,
-      is_interstate: false,
-      cgst_rate: 0,
-      cgst_amount: 0,
-      sgst_rate: 0,
-      sgst_amount: 0,
-      igst_rate: 0,
-      igst_amount: 0,
-      total_amount: grandTotalAmount,
-      paid_amount: 0,
-      status: 'unpaid',
-      invoice_date: invForm.invoice_date,
-      due_date: invForm.due_date,
-      items: items.map((it, idx) => ({ ...it, id: `item-${idx}` })),
-    });
+    if (editingInvoiceId) {
+      updateInvoice(editingInvoiceId, {
+        client_id: invForm.client_id,
+        client_name: selectedClient?.company_name || 'Client',
+        client_phone: selectedClient?.phone || '+91 98000 00000',
+        client_address: `${selectedClient?.billing_address || ''}, ${selectedClient?.city || ''}`,
+        client_gstin: selectedClient?.gstin || '',
+        job_order_id: invForm.job_order_id,
+        job_no: invForm.order_no,
+        hsn_sac_code: invForm.hsn_sac_code,
+        labour_amount: subTotalAmount,
+        subtotal: subTotalAmount,
+        total_amount: grandTotalAmount,
+        invoice_date: invForm.invoice_date,
+        due_date: invForm.due_date,
+        items: items.map((it, idx) => ({ ...it, id: `item-${idx}` })),
+      });
+    } else {
+      createInvoice({
+        client_id: invForm.client_id,
+        client_name: selectedClient?.company_name || 'Client',
+        client_phone: selectedClient?.phone || '+91 98000 00000',
+        client_address: `${selectedClient?.billing_address || ''}, ${selectedClient?.city || ''}`,
+        client_gstin: selectedClient?.gstin || '',
+        job_order_id: invForm.job_order_id,
+        job_no: invForm.order_no,
+        invoice_type: 'material_and_labour',
+        hsn_sac_code: invForm.hsn_sac_code,
+        labour_amount: subTotalAmount,
+        material_amount: 0,
+        subtotal: subTotalAmount,
+        is_interstate: false,
+        cgst_rate: 0,
+        cgst_amount: 0,
+        sgst_rate: 0,
+        sgst_amount: 0,
+        igst_rate: 0,
+        igst_amount: 0,
+        total_amount: grandTotalAmount,
+        paid_amount: 0,
+        status: 'unpaid',
+        invoice_date: invForm.invoice_date,
+        due_date: invForm.due_date,
+        items: items.map((it, idx) => ({ ...it, id: `item-${idx}` })),
+      });
+    }
 
     setIsInvoiceModalOpen(false);
+    setEditingInvoiceId(null);
   };
 
   const handleRecordPaymentSubmit = (e: React.FormEvent) => {
@@ -197,7 +251,7 @@ export default function InvoicesPage() {
           </button>
 
           <button
-            onClick={() => setIsInvoiceModalOpen(true)}
+            onClick={handleOpenCreateInvoice}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground font-semibold text-xs hover:bg-primary/90 transition shadow-md shadow-primary/20"
           >
             <Plus className="w-4 h-4" />
@@ -296,13 +350,34 @@ export default function InvoicesPage() {
                         </span>
                       </td>
                       <td className="p-3.5 text-right">
-                        <button
-                          onClick={() => setSelectedInvoice(inv)}
-                          className="px-3 py-1.5 rounded-lg border border-border bg-muted/40 hover:bg-muted font-semibold text-[11px] flex items-center gap-1.5 ml-auto transition"
-                        >
-                          <Printer className="w-3.5 h-3.5 text-primary" />
-                          <span>View & Print</span>
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => setSelectedInvoice(inv)}
+                            className="px-2.5 py-1.5 rounded-lg border border-border bg-muted/40 hover:bg-muted font-semibold text-[11px] flex items-center gap-1 transition"
+                            title="View & Print Invoice"
+                          >
+                            <Printer className="w-3.5 h-3.5 text-primary" />
+                            <span className="hidden sm:inline">Print</span>
+                          </button>
+                          <button
+                            onClick={() => handleOpenEditInvoice(inv)}
+                            className="p-1.5 rounded-lg border border-border bg-muted/40 hover:bg-amber-500/10 text-amber-500 font-semibold transition"
+                            title="Edit Invoice"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm(`Are you sure you want to delete invoice ${inv.invoice_no}?`)) {
+                                deleteInvoice(inv.id);
+                              }
+                            }}
+                            className="p-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-semibold transition"
+                            title="Delete Invoice"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -320,7 +395,7 @@ export default function InvoicesPage() {
             <div className="flex items-center justify-between border-b border-border pb-4">
               <div>
                 <h3 className="font-extrabold text-lg text-foreground flex items-center gap-2">
-                  <Receipt className="w-5 h-5 text-primary" /> Create New Customer Invoice
+                  <Receipt className="w-5 h-5 text-primary" /> {editingInvoiceId ? 'Edit Customer Invoice' : 'Create New Customer Invoice'}
                 </h3>
                 <p className="text-xs text-muted-foreground">Fill client details, line items with Sq/Ft and Rate, and bank payment QR code.</p>
               </div>
