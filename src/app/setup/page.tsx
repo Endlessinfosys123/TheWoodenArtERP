@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useErp } from '@/lib/store/ErpContext';
+import { updateDynamicSupabaseConfig } from '@/lib/supabase/client';
 import { 
   Building2, 
   Upload, 
@@ -42,10 +43,15 @@ export default function SetupWizardPage() {
     ifsc_code: companySettings?.ifsc_code || '',
     branch: companySettings?.branch || '',
 
-    // Super Admin User
+    // Super Admin User & 4-Digit Security PIN
     admin_name: 'Admin Superuser',
     admin_email: 'admin@company.com',
     admin_phone: '+91 98000 00000',
+    admin_pin: '1234',
+
+    // Supabase Multi-Tenant Database Project
+    supabase_url: '',
+    supabase_anon_key: '',
 
     // Setup Preset Mode
     preset_mode: 'cnc_preset' as 'clean' | 'cnc_preset',
@@ -62,6 +68,11 @@ export default function SetupWizardPage() {
 
   const handleFinishSetup = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // 0. Update dynamic Supabase credentials if provided
+    if (setupForm.supabase_url && setupForm.supabase_anon_key) {
+      updateDynamicSupabaseConfig(setupForm.supabase_url, setupForm.supabase_anon_key);
+    }
     
     // 1. Save company settings to DB
     await updateCompanySettings({
@@ -77,6 +88,10 @@ export default function SetupWizardPage() {
       account_no: setupForm.account_no || '00000000000',
       ifsc_code: setupForm.ifsc_code || 'IFSC0000000',
       branch: setupForm.branch || 'Main Branch',
+      passcode_enabled: true,
+      passcode_pin: setupForm.admin_pin || '1234',
+      supabase_url: setupForm.supabase_url,
+      supabase_anon_key: setupForm.supabase_anon_key,
     });
 
     // 2. Reset database/state according to selected preset mode

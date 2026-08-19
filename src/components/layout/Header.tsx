@@ -13,7 +13,8 @@ import {
   AlertTriangle,
   Clock,
   DollarSign,
-  Database
+  Database,
+  Lock
 } from 'lucide-react';
 import { isSupabaseConfigured } from '@/lib/supabase/db';
 
@@ -21,6 +22,7 @@ export default function Header() {
   const { 
     currentUser, 
     setUserRole, 
+    lockErp,
     lowStockCount, 
     pendingJobsCount, 
     unpaidInvoicesCount 
@@ -168,6 +170,16 @@ export default function Header() {
             </div>
           )}
         </div>
+
+        {/* Lock Screen Button */}
+        <button
+          onClick={lockErp}
+          className="p-2 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 transition flex items-center gap-1.5 text-xs font-semibold"
+          title="Lock ERP Screen (PIN Protection)"
+        >
+          <Lock className="w-3.5 h-3.5" />
+          <span className="hidden md:inline">Lock Screen</span>
+        </button>
 
         {/* Dark/Light Mode Toggle */}
         <button

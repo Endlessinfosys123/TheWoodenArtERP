@@ -364,7 +364,9 @@ export interface Payment {
 export interface CompanySettings {
   id?: string;
   company_name: string;
+  trade_name?: string;
   gstin: string;
+  pan_number?: string;
   state_code: string;
   state_name: string;
   address: string;
@@ -375,4 +377,24 @@ export interface CompanySettings {
   account_no?: string;
   ifsc_code?: string;
   branch?: string;
+
+  // Security & 4-Digit Passcode Lock
+  passcode_enabled?: boolean;
+  passcode_pin?: string; // 4-digit PIN e.g. '1234'
+  auto_lock_timer?: number; // Inactivity auto lock in minutes (0=disabled, 1, 5, 15, 30)
+
+  // CNC Machine & Shop-Floor Defaults
+  hourly_machining_rate?: number;
+  shift_hours_per_day?: number;
+  waste_margin_percent?: number;
+  qr_auto_confirm?: boolean;
+
+  // Invoice & GST Rules
+  invoice_prefix?: string;
+  hsn_default?: string;
+  tax_mode?: 'inclusive' | 'exclusive' | 'auto_gst';
+
+  // Supabase Multi-Tenant Connection
+  supabase_url?: string;
+  supabase_anon_key?: string;
 }

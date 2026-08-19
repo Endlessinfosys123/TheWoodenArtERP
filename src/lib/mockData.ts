@@ -28,6 +28,22 @@ export const INITIAL_COMPANY_SETTINGS: CompanySettings = {
   account_no: '50200049811204',
   ifsc_code: 'HDFC0000241',
   branch: 'MIDC Bhosari Pune Branch',
+
+  // Security & Passcode Defaults
+  passcode_enabled: false,
+  passcode_pin: '1234',
+  auto_lock_timer: 0,
+
+  // CNC Machine & Shop-Floor Defaults
+  hourly_machining_rate: 850,
+  shift_hours_per_day: 16,
+  waste_margin_percent: 5,
+  qr_auto_confirm: false,
+
+  // Invoice Defaults
+  invoice_prefix: 'TWA/INV/2026-27/',
+  hsn_default: '4411',
+  tax_mode: 'auto_gst',
 };
 
 export const INITIAL_USERS: UserProfile[] = [

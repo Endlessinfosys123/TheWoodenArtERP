@@ -21,6 +21,7 @@ import {
   JobStatus,
   CompanySettings
 } from '@/types';
+import PasscodeLockModal from '@/components/auth/PasscodeLockModal';
 import { 
   INITIAL_USERS, 
   INITIAL_VENDORS,
@@ -121,8 +122,11 @@ interface ErpContextType {
   createInvoice: (invoiceData: Omit<Invoice, 'id' | 'invoice_no' | 'financial_year' | 'created_at'>) => void;
   recordPayment: (paymentData: Omit<Payment, 'id' | 'created_at'>) => void;
 
-  // System Setup / Onboarding Action
+  // System Setup & Lock Actions
   resetToFreshInstance: (mode: 'clean' | 'cnc_preset') => void;
+  isLocked: boolean;
+  lockErp: () => void;
+  unlockErp: () => void;
 
   // Indicators
   lowStockCount: number;
@@ -663,6 +667,11 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const [isLocked, setIsLocked] = useState(false);
+
+  const lockErp = () => setIsLocked(true);
+  const unlockErp = () => setIsLocked(false);
+
   return (
     <ErpContext.Provider
       value={{
@@ -702,12 +711,16 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
         createInvoice,
         recordPayment,
         resetToFreshInstance,
+        isLocked,
+        lockErp,
+        unlockErp,
         lowStockCount,
         pendingJobsCount,
         pendingQCCount,
         unpaidInvoicesCount,
       }}
     >
+      <PasscodeLockModal isOpen={isLocked} onUnlock={unlockErp} />
       {children}
     </ErpContext.Provider>
   );
