@@ -12,7 +12,8 @@ import {
   Database,
   Lock,
   Image,
-  Upload
+  Upload,
+  Sparkles
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -242,6 +243,31 @@ export default function SettingsPage() {
                 onChange={(e) => setFormData({ ...formData, branch: e.target.value })}
                 className="w-full p-2.5 bg-muted/50 border border-border rounded-xl text-foreground"
               />
+            </div>
+          </div>
+        </div>
+
+        {/* Fresh Deployment & SaaS Selling Card */}
+        <div className="space-y-4 pt-4 border-t border-border">
+          <h3 className="font-bold text-sm text-foreground flex items-center gap-2 border-b border-border pb-3">
+            <Sparkles className="w-4 h-4 text-amber-500" /> Multi-Company Deployment & Product Setup
+          </h3>
+
+          <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h4 className="font-bold text-xs text-foreground">Deploying for a New Client Company?</h4>
+              <p className="text-[11px] text-muted-foreground">
+                Run the 3-step setup wizard to configure new company legal name, logo branding, super admin credentials, and fresh clean database.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <a
+                href="/setup"
+                className="px-4 py-2 rounded-xl bg-amber-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-md hover:bg-amber-500 transition"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Launch Setup Wizard</span>
+              </a>
             </div>
           </div>
         </div>

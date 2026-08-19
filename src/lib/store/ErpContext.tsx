@@ -121,6 +121,9 @@ interface ErpContextType {
   createInvoice: (invoiceData: Omit<Invoice, 'id' | 'invoice_no' | 'financial_year' | 'created_at'>) => void;
   recordPayment: (paymentData: Omit<Payment, 'id' | 'created_at'>) => void;
 
+  // System Setup / Onboarding Action
+  resetToFreshInstance: (mode: 'clean' | 'cnc_preset') => void;
+
   // Indicators
   lowStockCount: number;
   pendingJobsCount: number;
@@ -180,17 +183,17 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
         ]);
 
         if (dbSettings) setCompanySettings(dbSettings);
-        if (dbClients && dbClients.length > 0) setClients(dbClients);
-        if (dbVendors && dbVendors.length > 0) setVendors(dbVendors);
-        if (dbRates && dbRates.length > 0) setVendorRates(dbRates);
-        if (dbMaterials && dbMaterials.length > 0) setMaterials(dbMaterials);
-        if (dbInwards && dbInwards.length > 0) setMaterialInwards(dbInwards);
-        if (dbMachines && dbMachines.length > 0) setMachines(dbMachines);
-        if (dbJobs && dbJobs.length > 0) setJobOrders(dbJobs);
-        if (dbQc && dbQc.length > 0) setQcChecks(dbQc);
-        if (dbDispatch && dbDispatch.length > 0) setDispatches(dbDispatch);
-        if (dbInvoices && dbInvoices.length > 0) setInvoices(dbInvoices);
-        if (dbPayments && dbPayments.length > 0) setPayments(dbPayments);
+        if (dbClients !== null) setClients(dbClients);
+        if (dbVendors !== null) setVendors(dbVendors);
+        if (dbRates !== null) setVendorRates(dbRates);
+        if (dbMaterials !== null) setMaterials(dbMaterials);
+        if (dbInwards !== null) setMaterialInwards(dbInwards);
+        if (dbMachines !== null) setMachines(dbMachines);
+        if (dbJobs !== null) setJobOrders(dbJobs);
+        if (dbQc !== null) setQcChecks(dbQc);
+        if (dbDispatch !== null) setDispatches(dbDispatch);
+        if (dbInvoices !== null) setInvoices(dbInvoices);
+        if (dbPayments !== null) setPayments(dbPayments);
       } catch (err) {
         console.error('Supabase DB load error, using default state:', err);
       }
@@ -642,6 +645,24 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
   const pendingQCCount = jobOrders.filter(j => j.status === 'Quality Check' || j.status === 'Rework').length;
   const unpaidInvoicesCount = invoices.filter(i => i.status === 'unpaid' || i.status === 'partially_paid').length;
 
+  const resetToFreshInstance = (mode: 'clean' | 'cnc_preset') => {
+    setClients([]);
+    setVendors([]);
+    setVendorRates([]);
+    setJobOrders([]);
+    setQcChecks([]);
+    setDispatches([]);
+    setInvoices([]);
+    setPayments([]);
+    setMaterialInwards([]);
+
+    if (mode === 'clean') {
+      setMaterials([]);
+    } else {
+      setMaterials(INITIAL_MATERIALS);
+    }
+  };
+
   return (
     <ErpContext.Provider
       value={{
@@ -680,6 +701,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
         createDispatch,
         createInvoice,
         recordPayment,
+        resetToFreshInstance,
         lowStockCount,
         pendingJobsCount,
         pendingQCCount,
