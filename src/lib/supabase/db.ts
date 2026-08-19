@@ -47,6 +47,30 @@ export function isSupabaseConfigured(): boolean {
   return createClient() !== null;
 }
 
+// Active Company Instance Helper
+export function getActiveCompanyId(): string {
+  if (typeof window !== 'undefined') {
+    let compId = localStorage.getItem('cnc_erp_company_id');
+    if (!compId) {
+      compId = `comp_${generateUuid().substring(0, 8)}`;
+      localStorage.setItem('cnc_erp_company_id', compId);
+    }
+    return compId;
+  }
+  return 'comp_default';
+}
+
+export function resetCompanyInstance(mode: 'clean' | 'cnc_preset'): string {
+  if (typeof window !== 'undefined') {
+    const newCompId = `comp_${generateUuid().substring(0, 8)}`;
+    localStorage.setItem('cnc_erp_company_id', newCompId);
+    localStorage.setItem('cnc_erp_is_fresh', 'true');
+    localStorage.setItem('cnc_erp_preset_mode', mode);
+    return newCompId;
+  }
+  return 'comp_default';
+}
+
 // =================================================================
 // 1. COMPANY SETTINGS
 // =================================================================

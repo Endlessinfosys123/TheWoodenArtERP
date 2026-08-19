@@ -65,7 +65,8 @@ import {
   insertInvoice,
   fetchPayments,
   insertPayment,
-  deleteRowFromTableDb
+  deleteRowFromTableDb,
+  resetCompanyInstance
 } from '@/lib/supabase/db';
 
 interface ErpContextType {
@@ -150,17 +151,25 @@ const ErpContext = createContext<ErpContextType | undefined>(undefined);
 export function ErpProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<UserProfile>(INITIAL_USERS[0]);
   const [companySettings, setCompanySettings] = useState<CompanySettings>(INITIAL_COMPANY_SETTINGS);
-  const [clients, setClients] = useState<Client[]>(INITIAL_CLIENTS);
-  const [vendors, setVendors] = useState<Vendor[]>(INITIAL_VENDORS);
-  const [vendorRates, setVendorRates] = useState<VendorRateHistory[]>(INITIAL_VENDOR_RATES);
-  const [materials, setMaterials] = useState<Material[]>(INITIAL_MATERIALS);
-  const [materialInwards, setMaterialInwards] = useState<MaterialInward[]>(INITIAL_MATERIAL_INWARD);
+
+  // Check if this is a fresh company instance (Clean setup)
+  const isFresh = typeof window !== 'undefined' && localStorage.getItem('cnc_erp_is_fresh') === 'true';
+
+  const [clients, setClients] = useState<Client[]>(() => isFresh ? [] : INITIAL_CLIENTS);
+  const [vendors, setVendors] = useState<Vendor[]>(() => isFresh ? [] : INITIAL_VENDORS);
+  const [vendorRates, setVendorRates] = useState<VendorRateHistory[]>(() => isFresh ? [] : INITIAL_VENDOR_RATES);
+  const [materials, setMaterials] = useState<Material[]>(() => {
+    if (!isFresh) return INITIAL_MATERIALS;
+    const mode = typeof window !== 'undefined' ? localStorage.getItem('cnc_erp_preset_mode') : 'clean';
+    return mode === 'cnc_preset' ? INITIAL_MATERIALS : [];
+  });
+  const [materialInwards, setMaterialInwards] = useState<MaterialInward[]>(() => isFresh ? [] : INITIAL_MATERIAL_INWARD);
   const [machines, setMachines] = useState<Machine[]>(INITIAL_MACHINES);
-  const [jobOrders, setJobOrders] = useState<JobOrder[]>(INITIAL_JOB_ORDERS);
-  const [qcChecks, setQcChecks] = useState<QCCheck[]>(INITIAL_QC_CHECKS);
-  const [dispatches, setDispatches] = useState<Dispatch[]>(INITIAL_DISPATCHES);
-  const [invoices, setInvoices] = useState<Invoice[]>(INITIAL_INVOICES);
-  const [payments, setPayments] = useState<Payment[]>(INITIAL_PAYMENTS);
+  const [jobOrders, setJobOrders] = useState<JobOrder[]>(() => isFresh ? [] : INITIAL_JOB_ORDERS);
+  const [qcChecks, setQcChecks] = useState<QCCheck[]>(() => isFresh ? [] : INITIAL_QC_CHECKS);
+  const [dispatches, setDispatches] = useState<Dispatch[]>(() => isFresh ? [] : INITIAL_DISPATCHES);
+  const [invoices, setInvoices] = useState<Invoice[]>(() => isFresh ? [] : INITIAL_INVOICES);
+  const [payments, setPayments] = useState<Payment[]>(() => isFresh ? [] : INITIAL_PAYMENTS);
 
   // Sync state from Supabase Database on initial load if configured
   useEffect(() => {
@@ -209,7 +218,7 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
         if (dbInvoices !== null) setInvoices(dbInvoices);
         if (dbPayments !== null) setPayments(dbPayments);
       } catch (err) {
-        console.error('Supabase DB load error, using default state:', err);
+        console.error('Supabase DB load error:', err);
       }
     }
 
@@ -660,6 +669,8 @@ export function ErpProvider({ children }: { children: React.ReactNode }) {
   const unpaidInvoicesCount = invoices.filter(i => i.status === 'unpaid' || i.status === 'partially_paid').length;
 
   const resetToFreshInstance = (mode: 'clean' | 'cnc_preset') => {
+    resetCompanyInstance(mode);
+
     setClients([]);
     setVendors([]);
     setVendorRates([]);
