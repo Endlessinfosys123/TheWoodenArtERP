@@ -92,40 +92,50 @@
   background: rgba(148, 163, 184, 0.5);
 }
 
-/* High-Precision Print Styles for Invoices, Challans & Job Cards */
+/* 100% ISOLATED PRINT STYLES - PRINTS ONLY THE INVOICE DOCUMENT */
 @media print {
-  html, body {
-    background: #ffffff !important;
-    color: #000000 !important;
-    font-family: Arial, sans-serif !important;
-    margin: 0 !important;
-    padding: 0 !important;
+  /* 1. Hide every element in the DOM by default */
+  body * {
+    visibility: hidden !important;
   }
 
-  header, sidebar, nav, aside, .no-print {
-    display: none !important;
+  /* 2. Show ONLY printable-invoice and all its descendants */
+  .printable-invoice, .printable-invoice * {
+    visibility: visible !important;
   }
 
+  /* 3. Position printable-invoice at (0,0) top left of physical page */
   .printable-invoice {
     display: block !important;
-    visibility: visible !important;
-    position: relative !important;
+    position: absolute !important;
     left: 0 !important;
     top: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 10px !important;
+    padding: 0 !important;
     box-shadow: none !important;
     border: none !important;
+    background: #ffffff !important;
+    color: #000000 !important;
   }
 
+  /* Page setup */
+  @page {
+    margin: 8mm;
+    size: auto;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* High precision colors for table headers & grand total background */
   * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
-  }
-
-  .page-break {
-    page-break-after: always;
   }
 }
