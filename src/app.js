@@ -17,6 +17,7 @@ app.get("/api/health", (req, res) => res.json({ ok: true, storage: require("./st
 app.use("/api/auth", require("./routes/auth"));
 app.use("/api/users", require("./routes/users"));
 app.use("/api/data", require("./routes/data"));
+app.use("/api/config", require("./routes/config"));
 app.use("/api", (req, res) => res.status(404).json({ error: "Not found." }));
 
 // On your own server, Express also serves the app's screens. On Vercel the CDN does this.

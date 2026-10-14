@@ -921,6 +921,12 @@ function settingsForm(){
       <button type="button" class="btn" data-act="screenLockSettings">🛡️ Screen Lock (PIN & Biometric)</button>
       <button type="button" class="btn" data-act="quickLock">🔒 Lock Screen Now</button>
     </div>
+    ${S.isAdmin ? `
+    <div class="legend-s">Cloud Database & Storage (Supabase)</div>
+    <div class="actions" style="margin-top:0">
+      <button type="button" class="btn" data-act="dbSettings">🗄️ Database & Supabase Settings</button>
+    </div>
+    ` : ""}
     <div class="legend-s">Backup</div>
     <div class="actions" style="margin-top:0"><button type="button" class="btn" data-act="backup">${svg("dl")}Download full backup (JSON)</button></div>
     <p class="small muted">Invoice numbers follow the Indian financial year, e.g. INV/26-27/001. Everyone you share this app with sees the same data.</p>
@@ -961,6 +967,174 @@ async function saveUser(f){ try{ await window.KhataRest.users.create({name:f.nam
 async function savePass(f){ try{ await window.KhataRest.changePassword(f.cur.value, f.next.value); toast("Password changed"); closeSheet(); }catch(e){ toast(errMsg(e)); } }
 async function saveReset(f){ try{ await window.KhataRest.users.update(S._resetFor,{password:f.pw.value}); toast("Password updated"); teamSheet(); }catch(e){ toast(errMsg(e)); } }
 
+/* ---------- database & supabase settings ---------- */
+async function databaseSettingsSheet() {
+  let info = null;
+  try {
+    info = await window.KhataRest.config.getDatabase();
+  } catch (e) {
+    toast(errMsg(e));
+    return;
+  }
+  const dbInfo = info?.db || {};
+  const storageInfo = info?.storage || {};
+  const isSupabase = dbInfo.isSupabase;
+
+  openSheet("Database & Supabase Settings", `
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="background:var(--surface-2);padding:12px;border-radius:12px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-weight:600;font-size:14px">Active Database Mode</div>
+          <div style="font-size:12.5px;color:var(--muted)">${isSupabase ? "Cloud PostgreSQL (Supabase)" : "Local Embedded Database (PGlite - Offline)"}</div>
+        </div>
+        <span class="chip ${isSupabase ? "in" : "warn"}">${isSupabase ? "SUPABASE" : "LOCAL"}</span>
+      </div>
+
+      <div style="font-size:13px;color:var(--muted);background:rgba(11,107,93,0.08);border:1px solid rgba(11,107,93,0.2);padding:10px 12px;border-radius:10px">
+        💡 <b>Supabase Cloud Setup:</b> Paste your Supabase Connection String and API keys below. The app will automatically test connection, apply database tables schema, and switch live without downtime.
+      </div>
+
+      <form id="dbConfigForm" autocomplete="off" style="display:flex;flex-direction:column;gap:12px">
+        <label class="f full">
+          <span>DATABASE_URL (Supabase Connection String)</span>
+          <div style="display:flex;gap:6px;width:100%">
+            <input name="dbUrl" id="inpDbUrl" type="password" value="${esc(dbInfo.rawConfigured ? (dbInfo.url || "") : "")}" placeholder="postgresql://postgres.[REF]:[PASSWORD]@aws-0-...pooler.supabase.com:6543/postgres" style="flex:1">
+            <button type="button" class="btn sm" id="btnToggleDbPw">Show</button>
+          </div>
+          <small style="color:var(--muted);font-size:11.5px">Supabase ➔ Project Settings ➔ Database ➔ Connection string (Transaction pooler, port 6543)</small>
+        </label>
+
+        <label class="f full">
+          <span>SUPABASE_URL (Project URL)</span>
+          <input name="supaUrl" type="url" value="${esc(storageInfo.supabaseUrl || "")}" placeholder="https://xxxxxxxxxxxx.supabase.co">
+          <small style="color:var(--muted);font-size:11.5px">Supabase ➔ Project Settings ➔ API ➔ Project URL</small>
+        </label>
+
+        <label class="f full">
+          <span>SUPABASE_SERVICE_ROLE_KEY</span>
+          <input name="supaKey" type="password" placeholder="${storageInfo.hasServiceKey ? "(Configured - leave blank to keep unchanged)" : "eyJhbGciOi..."}">
+          <small style="color:var(--muted);font-size:11.5px">Supabase ➔ Project Settings ➔ API ➔ Project API keys ➔ service_role (secret)</small>
+        </label>
+
+        <div class="fg">
+          <label class="f">
+            <span>Storage Mode</span>
+            <select name="storageMode">
+              <option value="supabase" ${storageInfo.mode === "supabase" ? "selected" : ""}>Supabase Cloud Storage</option>
+              <option value="local" ${storageInfo.mode === "local" ? "selected" : ""}>Local Server Folder (./uploads)</option>
+            </select>
+          </label>
+          <label class="f">
+            <span>Bucket Name</span>
+            <input name="supaBucket" value="${esc(storageInfo.bucket || "bills")}" placeholder="bills">
+          </label>
+        </div>
+
+        <div id="dbTestStatus" style="display:none;padding:10px 12px;border-radius:10px;font-size:13px;line-height:1.4"></div>
+
+        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+          <button type="button" class="btn" id="btnTestDbConn">⚡ Test Connection</button>
+          <button type="submit" class="btn pri" id="btnSaveDbConn">💾 Save & Switch Database</button>
+        </div>
+
+        ${isSupabase ? `
+          <div style="margin-top:8px;border-top:1px solid var(--line);padding-top:12px">
+            <button type="button" class="btn sm danger-soft" id="btnRevertLocalDb">🔄 Revert to Local Database (PGlite)</button>
+          </div>
+        ` : ""}
+      </form>
+    </div>
+  `, `<button class="btn" data-act="settings">Back to Settings</button>`);
+
+  const form = $("#dbConfigForm");
+  const statusBox = $("#dbTestStatus");
+  const inpDbUrl = $("#inpDbUrl");
+  const btnToggle = $("#btnToggleDbPw");
+
+  btnToggle?.addEventListener("click", () => {
+    if (inpDbUrl.type === "password") {
+      inpDbUrl.type = "text";
+      btnToggle.textContent = "Hide";
+    } else {
+      inpDbUrl.type = "password";
+      btnToggle.textContent = "Show";
+    }
+  });
+
+  $("#btnTestDbConn")?.addEventListener("click", async () => {
+    const dbUrl = form.dbUrl.value.trim();
+    const supaUrl = form.supaUrl.value.trim();
+    const supaKey = form.supaKey.value.trim();
+    const supaBucket = form.supaBucket.value.trim();
+    const storageMode = form.storageMode.value;
+
+    statusBox.style.display = "block";
+    statusBox.style.background = "var(--surface-2)";
+    statusBox.style.color = "var(--ink)";
+    statusBox.textContent = "Testing connection to database and storage…";
+
+    try {
+      const res = await window.KhataRest.config.testDatabase({
+        databaseUrl: dbUrl,
+        supabaseUrl: supaUrl,
+        supabaseServiceRoleKey: supaKey,
+        supabaseBucket: supaBucket,
+        storageMode
+      });
+      statusBox.style.background = "rgba(16,185,129,0.12)";
+      statusBox.style.color = "var(--good)";
+      statusBox.innerHTML = `✅ <b>Connection Successful!</b><br>${esc(res.dbMessage)}<br>${esc(res.storageMessage)}`;
+    } catch (e) {
+      statusBox.style.background = "rgba(239,68,68,0.12)";
+      statusBox.style.color = "var(--bad)";
+      statusBox.innerHTML = `❌ <b>Connection Failed:</b><br>${esc(e.message || "Failed to connect")}`;
+    }
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const dbUrl = form.dbUrl.value.trim();
+    const supaUrl = form.supaUrl.value.trim();
+    const supaKey = form.supaKey.value.trim();
+    const supaBucket = form.supaBucket.value.trim();
+    const storageMode = form.storageMode.value;
+
+    statusBox.style.display = "block";
+    statusBox.style.background = "var(--surface-2)";
+    statusBox.style.color = "var(--ink)";
+    statusBox.textContent = "Saving and configuring database…";
+
+    try {
+      const res = await window.KhataRest.config.saveDatabase({
+        databaseUrl: dbUrl,
+        supabaseUrl: supaUrl,
+        supabaseServiceRoleKey: supaKey,
+        supabaseBucket: supaBucket,
+        storageMode
+      });
+      toast(res.message || "Database configuration updated!");
+      closeSheet();
+      setTimeout(() => location.reload(), 1200);
+    } catch (e) {
+      statusBox.style.background = "rgba(239,68,68,0.12)";
+      statusBox.style.color = "var(--bad)";
+      statusBox.innerHTML = `❌ <b>Failed to Save:</b><br>${esc(e.message || "Error saving database configuration")}`;
+    }
+  });
+
+  $("#btnRevertLocalDb")?.addEventListener("click", async () => {
+    if (!confirm("Switch back to the local embedded database (PGlite)? Cloud data will remain safely in Supabase.")) return;
+    try {
+      await window.KhataRest.config.saveDatabase({ databaseUrl: "", storageMode: "local" });
+      toast("Switched to Local Database.");
+      closeSheet();
+      setTimeout(() => location.reload(), 1200);
+    } catch (e) {
+      toast(errMsg(e));
+    }
+  });
+}
+
 /* ---------- exports ---------- */
 function csv(rows){ return rows.map(r=>r.map(v=>{ v=String(v??""); return /[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v; }).join(",")).join("\n"); }
 async function saveText(filename, text){
@@ -992,6 +1166,7 @@ document.addEventListener("click", async e => {
     case "settings": settingsForm(); break;
     case "quickLock": if(window.KhataLock) { if(window.KhataLock.isLockEnabled()) window.KhataLock.lock(); else window.KhataLock.openLockSettingsModal(); } break;
     case "screenLockSettings": if(window.KhataLock) window.KhataLock.openLockSettingsModal(); break;
+    case "dbSettings": databaseSettingsSheet(); break;
     case "newInvoice": docForm("invoice"); break;
     case "newQuote": docForm("quote"); break;
     case "editInvoice": docForm("invoice", S.invoices.find(x=>x.id===id)); break;

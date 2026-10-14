@@ -212,5 +212,10 @@
       create: async (u) => { const j = await req("POST", "/users", u); usersCache = null; return j.user; },
       update: async (id, patch) => { const j = await req("PATCH", "/users/" + encodeURIComponent(id), patch); usersCache = null; return j.user; },
     },
+    config: {
+      getDatabase: () => req("GET", "/config/database"),
+      testDatabase: (data) => req("POST", "/config/database/test", data),
+      saveDatabase: (data) => req("POST", "/config/database/save", data),
+    },
   };
 })();
