@@ -916,6 +916,11 @@ function settingsForm(){
     </fieldset>
     ${MODE==="rest" ? `<div class="legend-s">Team & login</div><div class="actions" style="margin-top:0">${S.isAdmin?`<button type="button" class="btn" data-act="team">Manage team logins</button>`:""}<button type="button" class="btn" data-act="myPass">Change my password</button><button type="button" class="btn danger-soft" data-act="logout">Log out</button></div>` : ""}
     ${ro && !S.offline ? `<p class="small muted">Only an admin can change company settings.</p>` : ""}
+    <div class="legend-s">Security & Screen Lock</div>
+    <div class="actions" style="margin-top:0">
+      <button type="button" class="btn" data-act="screenLockSettings">🛡️ Screen Lock (PIN & Biometric)</button>
+      <button type="button" class="btn" data-act="quickLock">🔒 Lock Screen Now</button>
+    </div>
     <div class="legend-s">Backup</div>
     <div class="actions" style="margin-top:0"><button type="button" class="btn" data-act="backup">${svg("dl")}Download full backup (JSON)</button></div>
     <p class="small muted">Invoice numbers follow the Indian financial year, e.g. INV/26-27/001. Everyone you share this app with sees the same data.</p>
@@ -985,6 +990,8 @@ document.addEventListener("click", async e => {
     case "close": closeSheet(); break;
     case "back": S._back ? S._back() : closeSheet(); break;
     case "settings": settingsForm(); break;
+    case "quickLock": if(window.KhataLock) { if(window.KhataLock.isLockEnabled()) window.KhataLock.lock(); else window.KhataLock.openLockSettingsModal(); } break;
+    case "screenLockSettings": if(window.KhataLock) window.KhataLock.openLockSettingsModal(); break;
     case "newInvoice": docForm("invoice"); break;
     case "newQuote": docForm("quote"); break;
     case "editInvoice": docForm("invoice", S.invoices.find(x=>x.id===id)); break;

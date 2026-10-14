@@ -208,3 +208,241 @@ fieldset{border:0;padding:0;margin:0}
 .auth-card form{display:flex;flex-direction:column;gap:12px}
 .auth-err{color:var(--bad);font-size:13.5px;min-height:1em}
 a.btn{text-decoration:none}
+
+/* ---------- Screen Lock Overlay (PIN & Biometric) ---------- */
+body.khata-locked main, body.khata-locked header, body.khata-locked nav, body.khata-locked #fabHost {
+  filter: blur(8px);
+  pointer-events: none;
+  user-select: none;
+}
+.screen-lock-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(11, 23, 21, 0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: fadeInLock 0.25s ease-out;
+}
+@keyframes fadeInLock { from { opacity: 0; } to { opacity: 1; } }
+
+.lock-box {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  color: #fff;
+}
+.lock-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.lock-badge {
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #0B6B5D, #16A34A);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  margin-bottom: 12px;
+  box-shadow: 0 10px 25px rgba(11, 107, 93, 0.4);
+}
+.lock-badge svg {
+  width: 26px;
+  height: 26px;
+}
+.lock-brand h2 {
+  font-family: var(--f-display);
+  font-size: 22px;
+  margin: 0 0 6px;
+  letter-spacing: -0.3px;
+}
+.lock-brand p {
+  color: #94A3B8;
+  font-size: 13.5px;
+  margin: 0;
+}
+
+.pin-display {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin: 20px 0 12px;
+  padding: 8px;
+}
+.pin-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #334155;
+  background: transparent;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.pin-dot.filled {
+  background: #10B981;
+  border-color: #10B981;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.6);
+  transform: scale(1.15);
+}
+.pin-display.shake {
+  animation: shakeKeypad 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+.pin-display.shake .pin-dot {
+  background: var(--bad);
+  border-color: var(--bad);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.6);
+}
+@keyframes shakeKeypad {
+  10%, 90% { transform: translate3d(-3px, 0, 0); }
+  20%, 80% { transform: translate3d(5px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-6px, 0, 0); }
+  40%, 60% { transform: translate3d(6px, 0, 0); }
+}
+
+.lock-status {
+  min-height: 20px;
+  font-size: 13px;
+  color: #94A3B8;
+  margin-bottom: 16px;
+}
+.lock-status.err {
+  color: #F87171;
+  font-weight: 500;
+}
+
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  width: 100%;
+  max-width: 270px;
+}
+.key-btn {
+  aspect-ratio: 1;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  color: #F8FAFC;
+  font-family: var(--f-display);
+  font-size: 26px;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  margin: 0 auto;
+}
+.key-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.key-btn:active {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: #10B981;
+  transform: scale(0.92);
+}
+.key-btn.act-btn {
+  background: transparent;
+  border-color: transparent;
+}
+.key-btn.act-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.key-btn.act-btn svg {
+  width: 26px;
+  height: 26px;
+  stroke: #94A3B8;
+  transition: stroke 0.15s ease;
+}
+.key-btn.act-btn:hover svg {
+  stroke: #F8FAFC;
+}
+.key-btn.act-btn.empty {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.lock-footer {
+  margin-top: 24px;
+}
+.link-btn {
+  background: none;
+  border: none;
+  color: #94A3B8;
+  font-size: 13.5px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 6px 12px;
+  border-radius: 6px;
+}
+.link-btn:hover {
+  color: #F8FAFC;
+}
+
+/* Biometric Offer & Settings Scrim */
+.bio-offer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  animation: fadeInLock 0.2s ease-out;
+}
+.bio-offer-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  text-align: center;
+}
+.bio-icon-wrap {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(11, 107, 93, 0.12);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  margin: 0 auto 16px;
+}
+.bio-icon-wrap svg {
+  width: 30px;
+  height: 30px;
+}
+.bio-offer-card h3 {
+  font-family: var(--f-display);
+  font-size: 20px;
+  margin: 0 0 8px;
+}
+.bio-offer-card p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+.bio-offer-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
