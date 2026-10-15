@@ -27,11 +27,10 @@ if (!process.env.VERCEL) {
   app.get("*", (req, res) => res.sendFile(path.join(pub, "index.html")));
 }
 
-// eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   if (err.type === "entity.too.large") return res.status(413).json({ error: "File is too large." });
-  console.error(err);
-  res.status(500).json({ error: "Server error. Please try again." });
+  console.error("[server error]", err);
+  res.status(500).json({ error: err.message || "Server error. Please try again." });
 });
 
 module.exports = app;

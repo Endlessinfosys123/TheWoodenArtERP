@@ -29,6 +29,10 @@ function setupConnection(targetUrl) {
       connectionTimeoutMillis: 10000,
     });
   } else {
+    if (process.env.VERCEL) {
+      console.error("[db] DATABASE_URL is not set in Vercel Environment Variables.");
+      return;
+    }
     console.log("[db] DATABASE_URL not set. Running with embedded PostgreSQL (PGlite) in ./db/pgdata for local testing.");
     const { PGlite } = require("@electric-sql/pglite");
     const dataDir = path.resolve(process.env.LOCAL_DB_DIR || path.join(__dirname, "..", "db", "pgdata"));
@@ -40,6 +44,9 @@ function setupConnection(targetUrl) {
 setupConnection(currentUrl);
 
 async function init() {
+  if (!pool && !pgliteDb) {
+    throw new Error("DATABASE_URL is not configured in Vercel Environment Variables. Please add DATABASE_URL in Vercel Project Settings.");
+  }
   if (!ready) {
     const sql = fs.readFileSync(path.join(__dirname, "..", "db", "schema.sql"), "utf8");
     if (pool) {
