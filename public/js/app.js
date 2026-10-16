@@ -4,6 +4,162 @@
 const STATES = ["Andaman and Nicobar Islands","Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chandigarh","Chhattisgarh","Dadra and Nagar Haveli and Daman and Diu","Delhi","Goa","Gujarat","Haryana","Himachal Pradesh","Jammu and Kashmir","Jharkhand","Karnataka","Kerala","Ladakh","Lakshadweep","Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland","Odisha","Puducherry","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand","West Bengal"];
 const GST_RATES = [0, 0.25, 3, 5, 12, 18, 28];
 const MATS = ["Acrylic","MDF","Corian","MS (Mild Steel)","SS (Stainless Steel)","ACP","WPC","Plywood","Aluminium","Brass","Other"];
+
+const DEFAULT_MAT_PRICING = [
+  { material: "Acrylic", thick: 2, rate: 80 },
+  { material: "Acrylic", thick: 3, rate: 120 },
+  { material: "Acrylic", thick: 5, rate: 200 },
+  { material: "Acrylic", thick: 8, rate: 320 },
+  { material: "Acrylic", thick: 10, rate: 420 },
+  { material: "MDF", thick: 6, rate: 35 },
+  { material: "MDF", thick: 8, rate: 45 },
+  { material: "MDF", thick: 12, rate: 65 },
+  { material: "MDF", thick: 18, rate: 95 },
+  { material: "Corian", thick: 6, rate: 250 },
+  { material: "Corian", thick: 12, rate: 450 },
+  { material: "ACP", thick: 3, rate: 45 },
+  { material: "ACP", thick: 4, rate: 60 },
+  { material: "WPC", thick: 5, rate: 40 },
+  { material: "WPC", thick: 12, rate: 85 },
+  { material: "WPC", thick: 18, rate: 130 },
+  { material: "Plywood", thick: 6, rate: 45 },
+  { material: "Plywood", thick: 12, rate: 75 },
+  { material: "Plywood", thick: 18, rate: 110 },
+  { material: "MS (Mild Steel)", thick: 1, rate: 90 },
+  { material: "MS (Mild Steel)", thick: 2, rate: 160 },
+  { material: "MS (Mild Steel)", thick: 3, rate: 240 },
+  { material: "SS (Stainless Steel)", thick: 1, rate: 180 },
+  { material: "SS (Stainless Steel)", thick: 2, rate: 320 },
+  { material: "Aluminium", thick: 1, rate: 120 },
+  { material: "Aluminium", thick: 2, rate: 220 },
+  { material: "Brass", thick: 1, rate: 450 },
+  { material: "Brass", thick: 2, rate: 850 }
+];
+
+function getMatPricingList(){
+  const s = S.settings || {};
+  if (Array.isArray(s.matPricing) && s.matPricing.length) return s.matPricing;
+  if (s.matRates && Object.keys(s.matRates).length) {
+    const list = [];
+    Object.entries(s.matRates).forEach(([m, r]) => {
+      if (r !== "" && r !== null && r !== undefined) {
+        list.push({ material: m, thick: "", rate: +r });
+      }
+    });
+    DEFAULT_MAT_PRICING.forEach(d => {
+      if (!list.some(x => x.material.toLowerCase() === d.material.toLowerCase())) {
+        list.push({ ...d });
+      }
+    });
+    return list;
+  }
+  return DEFAULT_MAT_PRICING;
+}
+
+function getAllConfiguredMaterials(){
+  const list = getMatPricingList();
+  const names = new Set(MATS.filter(m=>m!=="Other"));
+  list.forEach(x => { if(x.material && x.material.trim()) names.add(x.material.trim()); });
+  (S.materials||[]).forEach(m => { if(m.name && m.name.trim()) names.add(m.name.trim()); });
+  return [...names];
+}
+
+function getMaterialThicknesses(material){
+  if(!material) return [];
+  const list = getMatPricingList();
+  const matNorm = material.trim().toLowerCase();
+  return list
+    .filter(x => (x.material||"").trim().toLowerCase() === matNorm && x.thick !== "" && x.thick !== null && x.thick !== undefined)
+    .sort((a,b) => (parseFloat(a.thick)||0) - (parseFloat(b.thick)||0));
+}
+
+function getMaterialRate(material, thick){
+  if(!material) return null;
+  const list = getMatPricingList();
+  const matNorm = material.trim().toLowerCase();
+  const thNum = parseFloat(thick);
+  
+  if(!isNaN(thNum)){
+    const exact = list.find(x => (x.material||"").trim().toLowerCase() === matNorm && parseFloat(x.thick) === thNum);
+    if(exact && exact.rate !== undefined && exact.rate !== "") return +exact.rate;
+  }
+  
+  const noThick = list.find(x => (x.material||"").trim().toLowerCase() === matNorm && (!x.thick || parseFloat(x.thick) === 0));
+  if(noThick && noThick.rate !== undefined && noThick.rate !== "") return +noThick.rate;
+
+  const oldRate = (S.settings?.matRates || {})[material];
+  if(oldRate !== undefined && oldRate !== "") return +oldRate;
+
+  if(isNaN(thNum)){
+    const firstWithRate = list.find(x => (x.material||"").trim().toLowerCase() === matNorm && x.rate);
+    if(firstWithRate) return +firstWithRate.rate;
+  }
+
+  return null;
+}
+
+function onMaterialOrThickChange(itemRowElem, changedField){
+  const r = itemRowElem;
+  if (!r) return;
+  const matIn = $("[name=material]", r);
+  const thickIn = $("[name=thick]", r);
+  const rateIn = $("[name=rate]", r);
+  const matVal = matIn ? matIn.value : "";
+  let thickVal = thickIn ? thickIn.value.trim() : "";
+
+  const m = S.materials.find(x => x.name === matVal);
+  if(m && changedField === "material"){
+    if(m.saleRate && rateIn && !rateIn.value) rateIn.value = m.saleRate;
+    if(m.thick && thickIn && !thickIn.value) { thickIn.value = m.thick; thickVal = String(m.thick); }
+    if(m.hsn && $("[name=hsn]", r) && !$("[name=hsn]", r).value) $("[name=hsn]", r).value = m.hsn;
+    const v = (m.unit||"").toLowerCase().startsWith("sq") ? "sqft" : "unit";
+    const b = $(`[data-act=pricing][data-v=${v}]`, r);
+    if(b && r.dataset.pricing !== v) b.click();
+    if(v === "unit" && m.unit && $("[name=unit]", r)) $("[name=unit]", r).value = m.unit;
+  }
+
+  const thList = matVal ? getMaterialThicknesses(matVal) : [];
+  const thWrap = $("[data-role=thickHints]", r);
+  if(thWrap){
+    if(thList.length){
+      const thChipsHtml = thList.map(t => {
+        const isActive = thickVal !== "" && parseFloat(thickVal) === parseFloat(t.thick);
+        return `<button type="button" class="th-chip ${isActive ? 'active' : ''}" data-act="pickThick" data-thick="${esc(t.thick)}" data-rate="${esc(t.rate)}">${esc(t.thick)}mm <span class="rate-badge">₹${esc(t.rate)}</span></button>`;
+      }).join("");
+      thWrap.innerHTML = `<span class="muted" style="font-size:11px;font-weight:600;display:flex;align-items:center;margin-right:2px">Thickness:</span>` + thChipsHtml;
+      thWrap.hidden = false;
+    } else {
+      thWrap.innerHTML = "";
+      thWrap.hidden = true;
+    }
+  }
+
+  if(changedField === "material"){
+    if(thickVal !== ""){
+      const rByTh = getMaterialRate(matVal, thickVal);
+      if(rByTh !== null && rateIn) rateIn.value = rByTh;
+    } else if(thList.length > 0 && !m){
+      if(thickIn) { thickIn.value = thList[0].thick; thickVal = String(thList[0].thick); }
+      if(rateIn) rateIn.value = thList[0].rate;
+      if(thWrap) $$(".th-chip", thWrap).forEach((c, idx) => c.classList.toggle("active", idx === 0));
+    } else {
+      const defRate = getMaterialRate(matVal, "");
+      if(defRate !== null && rateIn) rateIn.value = defRate;
+    }
+  } else if(changedField === "thick"){
+    if(matVal){
+      const rByTh = getMaterialRate(matVal, thickVal);
+      if(rByTh !== null && rateIn) rateIn.value = rByTh;
+      if(thWrap){
+        $$(".th-chip", thWrap).forEach(c => {
+          const isActive = thickVal !== "" && parseFloat(thickVal) === parseFloat(c.dataset.thick);
+          c.classList.toggle("active", isActive);
+        });
+      }
+    }
+  }
+}
+
 const DIMS = { in:{label:"inch", f:1/144}, ft:{label:"feet", f:1}, mm:{label:"mm", f:1/92903.04} };
 const UNITS = ["Sq.ft","Nos","Pcs","Kg","g","Ltr","Mtr","Ft","Sq.ft","Box","Bag","Set","Hr","Day","Job","Ton"];
 const MODES = ["Cash","UPI","Bank transfer","Cheque","Card"];
@@ -447,10 +603,26 @@ function itemRow(it={}, gst, prev){
   const du = it.du || prev?.du || S.settings.dimUnit || "in";
   const stockNames = S.materials.map(m=>m.name).filter(n=>n && !MATS.includes(n));
   const mat = it.material ?? prev?.material ?? "";
-  const extra = mat && !MATS.includes(mat) && !stockNames.includes(mat) ? `<option selected>${esc(mat)}</option>` : "";
-  const matOpts = `<option value="">Material…</option>${MATS.map(m=>`<option ${m===mat?"selected":""}>${esc(m)}</option>`).join("")}${stockNames.length?`<optgroup label="From stock">${stockNames.map(n=>`<option ${n===mat?"selected":""}>${esc(n)}</option>`).join("")}</optgroup>`:""}${extra}`;
+  const thick = it.thick ?? prev?.thick ?? "";
+  
+  const allConfigured = getAllConfiguredMaterials();
+  const customMats = allConfigured.filter(m => !MATS.includes(m) && !stockNames.includes(m));
+  const extra = mat && !MATS.includes(mat) && !stockNames.includes(mat) && !customMats.includes(mat) ? `<option selected>${esc(mat)}</option>` : "";
+  const matOpts = `<option value="">Material…</option>`
+    + `${MATS.map(m=>`<option ${m===mat?"selected":""}>${esc(m)}</option>`).join("")}`
+    + `${customMats.length?`<optgroup label="Custom Materials">${customMats.map(n=>`<option ${n===mat?"selected":""}>${esc(n)}</option>`).join("")}</optgroup>`:""}`
+    + `${stockNames.length?`<optgroup label="From stock">${stockNames.map(n=>`<option ${n===mat?"selected":""}>${esc(n)}</option>`).join("")}</optgroup>`:""}`
+    + `${extra}`;
+
+  const thList = mat ? getMaterialThicknesses(mat) : [];
+  const thChipsHtml = thList.map(t => {
+    const isActive = thick !== "" && parseFloat(thick) === parseFloat(t.thick);
+    return `<button type="button" class="th-chip ${isActive?'active':''}" data-act="pickThick" data-thick="${esc(t.thick)}" data-rate="${esc(t.rate)}">${esc(t.thick)}mm <span class="rate-badge">₹${esc(t.rate)}</span></button>`;
+  }).join("");
+
   return `<div class="item" data-pricing="${p}">
-    <div class="d"><select name="material" aria-label="Material">${matOpts}</select><input name="thick" type="number" inputmode="decimal" step="any" min="0" placeholder="mm" value="${esc(it.thick ?? prev?.thick ?? "")}" aria-label="Thickness (mm)" class="thick"><button type="button" class="x" data-act="rmItem" aria-label="Remove item">×</button></div>
+    <div class="d"><select name="material" aria-label="Material">${matOpts}</select><input name="thick" type="number" inputmode="decimal" step="any" min="0" placeholder="mm" value="${esc(thick)}" aria-label="Thickness (mm)" class="thick"><button type="button" class="x" data-act="rmItem" aria-label="Remove item">×</button></div>
+    <div class="thick-hints full" data-role="thickHints" ${thList.length ? "" : "hidden"}><span class="muted" style="font-size:11px;font-weight:600;display:flex;align-items:center;margin-right:2px">Thickness:</span>${thChipsHtml}</div>
     <input class="full" name="desc" placeholder="Job / design (e.g. Name plate, Jali cutting)" value="${esc(it.desc||"")}" aria-label="Description">
     <input type="hidden" name="pricing" value="${p}">
     <div class="pseg full" role="group"><button type="button" data-act="pricing" data-v="sqft" aria-pressed="${p==="sqft"}">Per sq.ft</button><button type="button" data-act="pricing" data-v="unit" aria-pressed="${p!=="sqft"}">Per piece / unit</button></div>
@@ -1479,12 +1651,61 @@ function renderSettingsMedia(){
   }
 }
 
+function renderMatPricingInSettings(){
+  const container = $("#matPricingListContainer");
+  if(!container) return;
+  const list = S._tempMatPricing || [];
+  
+  if(!list.length){
+    container.innerHTML = `<p class="small muted" style="padding:14px;background:var(--surface-2);border-radius:9px;text-align:center">No material thickness rates added yet. Use the form above to add rates.</p>`;
+    return;
+  }
+  
+  const groups = {};
+  list.forEach((item, index) => {
+    const m = (item.material || "Other").trim();
+    if(!groups[m]) groups[m] = [];
+    groups[m].push({ ...item, index });
+  });
+
+  let h = `<div class="mat-pricing-wrap">`;
+  Object.entries(groups).forEach(([matName, items]) => {
+    items.sort((a,b) => (parseFloat(a.thick)||0) - (parseFloat(b.thick)||0));
+    h += `<div class="mat-group">
+      <div class="mat-group-hd">
+        <div class="mat-group-badge">
+          <span>${esc(matName)}</span>
+          <span class="mat-tag">${items.length} ${items.length === 1 ? 'thickness' : 'thicknesses'}</span>
+        </div>
+        <button type="button" class="btn sm" data-act="quickAddThick" data-mat="${esc(matName)}" style="padding:3px 9px;font-size:11.5px">+ Add thickness</button>
+      </div>
+      <div class="mat-rates-grid">
+        ${items.map(it => `
+          <div class="mat-rate-card">
+            <div class="info">
+              <span class="th">${it.thick !== "" && it.thick !== null && it.thick !== undefined ? `${esc(it.thick)} mm` : '<span class="muted" style="font-size:11px">Default (any mm)</span>'}</span>
+            </div>
+            <div class="input-wrap">
+              <span class="unit">₹</span>
+              <input type="number" inputmode="decimal" step="any" min="0" class="mat-rate-in" data-idx="${it.index}" value="${esc(it.rate)}" placeholder="Rate">
+              <span class="unit">/sqft</span>
+            </div>
+            <button type="button" class="rm-btn" data-act="rmMatPrice" data-idx="${it.index}" aria-label="Delete rate" title="Delete">×</button>
+          </div>
+        `).join("")}
+      </div>
+    </div>`;
+  });
+  h += `</div>`;
+  container.innerHTML = h;
+}
+
 function settingsForm(){
   const s = S.settings || {};
   S._settingsLogoId = s.logoId || null;
   S._settingsQrId = s.qrId || null;
+  S._tempMatPricing = JSON.parse(JSON.stringify(getMatPricingList()));
   const ro = !S.canWrite || !S.isAdmin || S.offline;
-  const mr = s.matRates || {};
 
   openSheet("Company settings", `<form id="setForm" data-form="set"><fieldset ${ro?"disabled":""}>
     <div class="legend-s" style="margin-top:0">Company</div>
@@ -1527,9 +1748,32 @@ function settingsForm(){
       <label class="f"><span>Default size unit</span><select name="dimUnit">${Object.entries(DIMS).map(([k,v])=>`<option value="${k}" ${(s.dimUnit||"in")===k?"selected":""}>${v.label}</option>`).join("")}</select></label>
       <label class="f full"><span>Additional terms & conditions</span><textarea name="terms" rows="3" placeholder="Additional terms...">${esc(s.terms||"")}</textarea></label>
     </div>
-    <div class="legend-s">Default rate per sq.ft (₹)</div>
-    <p class="small muted" style="margin:-4px 0 8px">Filled in automatically when you choose the material on an invoice line. Leave blank to type each time.</p>
-    <div class="fg">${MATS.filter(m=>m!=="Other").map((m,i)=>`<label class="f"><span>${esc(m)}</span><input name="mr_${i}" data-mat="${esc(m)}" type="number" inputmode="decimal" step="any" min="0" value="${esc(mr[m]??"")}"></label>`).join("")}</div>
+    <div class="legend-s">Material & Thickness Rates (₹ per sq.ft)</div>
+    <p class="small muted" style="margin:-4px 0 10px">Configure different thickness rates (₹/sq.ft) for each material. Any custom material + thickness added here will be available when creating Quotations & Invoices.</p>
+
+    <div class="mat-add-card" style="background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px">
+      <div style="font-size:12.5px;font-weight:700;margin-bottom:8px;color:var(--ink)">➕ Add Material & Thickness Rate</div>
+      <div class="mat-add-grid" style="display:grid;grid-template-columns:2fr 1fr 1.2fr auto;gap:8px;align-items:flex-end">
+        <label class="f" style="margin:0">
+          <span style="font-size:11px">Material name</span>
+          <input id="newMatName" list="allMatSuggestions" placeholder="e.g. Acrylic, HDHMR, Corian" autocomplete="off">
+        </label>
+        <label class="f" style="margin:0">
+          <span style="font-size:11px">Thickness (mm)</span>
+          <input id="newMatThick" type="number" inputmode="decimal" step="any" min="0" placeholder="e.g. 3">
+        </label>
+        <label class="f" style="margin:0">
+          <span style="font-size:11px">Rate (₹/sq.ft)</span>
+          <input id="newMatRate" type="number" inputmode="decimal" step="any" min="0" placeholder="e.g. 120">
+        </label>
+        <button type="button" class="btn pri sm" data-act="addMatPrice" style="height:42px;white-space:nowrap;padding:0 14px">+ Add Rate</button>
+      </div>
+      <datalist id="allMatSuggestions">
+        ${getAllConfiguredMaterials().map(m=>`<option value="${esc(m)}">`).join("")}
+      </datalist>
+    </div>
+
+    <div id="matPricingListContainer"></div>
     </fieldset>
     ${MODE==="rest" ? `<div class="legend-s">Team & login</div><div class="actions" style="margin-top:0">${S.isAdmin?`<button type="button" class="btn" data-act="team">Manage team logins</button>`:""}<button type="button" class="btn" data-act="myPass">Change my password</button><button type="button" class="btn danger-soft" data-act="logout">Log out</button></div>` : ""}
     ${ro && !S.offline ? `<p class="small muted">Only an admin can change company settings.</p>` : ""}
@@ -1550,6 +1794,7 @@ function settingsForm(){
   </form>`, ro?`<button class="btn" data-act="close">Close</button>`:`<button class="btn" data-act="close">Cancel</button><button class="btn pri" type="submit" form="setForm">Save settings</button>`);
 
   renderSettingsMedia();
+  renderMatPricingInSettings();
 }
 
 async function saveSettings(form){
@@ -1563,8 +1808,20 @@ async function saveSettings(form){
   s.defaultGst=+f.defaultGst?.value||18;
   s.dueDays=+f.dueDays?.value||0;
   s.dimUnit=f.dimUnit?.value||"in";
-  s.matRates={};
-  $$("[data-mat]",f).forEach(i=>{ if(i.value!=="") s.matRates[i.dataset.mat]=r2(i.value); });
+
+  const validPricing = (S._tempMatPricing || []).filter(x => x.material && x.material.trim() && x.rate !== "" && x.rate !== null && !isNaN(+x.rate));
+  s.matPricing = validPricing.map(x => ({
+    material: x.material.trim(),
+    thick: x.thick !== "" && x.thick !== null && !isNaN(+x.thick) ? +x.thick : "",
+    rate: r2(x.rate)
+  }));
+  s.matRates = {};
+  s.matPricing.forEach(p => {
+    if(!s.matRates[p.material] || (p.thick === "" || p.thick === 0)) {
+      s.matRates[p.material] = p.rate;
+    }
+  });
+
   s.logoId = S._settingsLogoId !== undefined ? S._settingsLogoId : (S.settings?.logoId || null);
   s.qrId = S._settingsQrId !== undefined ? S._settingsQrId : (S.settings?.qrId || null);
   s.updatedAt=Date.now();
@@ -1877,6 +2134,61 @@ document.addEventListener("click", async e => {
     case "myPass": passSheet(); break;
     case "userToggle": { const u=(S._users||[]).find(x=>x.id===id); if(!u) break; try{ await window.KhataRest.users.update(id,{active:!u.active}); toast(u.active?"Login turned off":"Login turned on"); teamSheet(); }catch(e){ toast(errMsg(e)); } break; }
     case "userReset": { S._resetFor=id; const u=(S._users||[]).find(x=>x.id===id); openSheet("Reset password", `<form id="resetForm" data-form="reset"><p style="margin-top:0">New password for <b>${esc(u?.name)}</b> (${esc(u?.username)})</p><label class="f"><span>New password (min 6)</span><input name="pw" type="text" minlength="6" required autocomplete="off"></label></form>`, `<button class="btn" data-act="team">Back</button><button class="btn pri" type="submit" form="resetForm">Save</button>`); break; }
+    case "pickThick": {
+      const r = el.closest(".item");
+      if(!r) break;
+      const thickVal = el.dataset.thick;
+      const rateVal = el.dataset.rate;
+      const thickIn = $("[name=thick]", r);
+      const rateIn = $("[name=rate]", r);
+      if(thickIn) thickIn.value = thickVal;
+      if(rateIn) rateIn.value = rateVal;
+      
+      const sqftBtn = $(`[data-act=pricing][data-v=sqft]`, r);
+      if(sqftBtn && r.dataset.pricing !== "sqft") sqftBtn.click();
+
+      $$(".th-chip", r).forEach(c => c.classList.toggle("active", c.dataset.thick === thickVal));
+      recalcForm();
+      break;
+    }
+    case "addMatPrice": {
+      const name = ($("#newMatName")?.value || "").trim();
+      const thick = ($("#newMatThick")?.value || "").trim();
+      const rate = ($("#newMatRate")?.value || "").trim();
+      if(!name){ toast("Please enter material name"); $("#newMatName")?.focus(); break; }
+      if(!rate || isNaN(+rate) || +rate < 0){ toast("Please enter valid rate per sq.ft"); $("#newMatRate")?.focus(); break; }
+      S._tempMatPricing = S._tempMatPricing || [];
+      const thNum = thick !== "" ? +thick : "";
+      const existing = S._tempMatPricing.find(x => (x.material||"").trim().toLowerCase() === name.toLowerCase() && (x.thick === "" ? "" : +x.thick) === (thNum === "" ? "" : +thNum));
+      if(existing){
+        existing.rate = +rate;
+        toast(`Updated rate for ${name} ${thick ? thick+'mm' : ''}`);
+      } else {
+        S._tempMatPricing.push({ material: name, thick: thNum, rate: +rate });
+        toast(`Added ${name} ${thick ? thick+'mm' : ''} at ₹${rate}/sq.ft`);
+      }
+      if($("#newMatThick")) $("#newMatThick").value = "";
+      if($("#newMatRate")) $("#newMatRate").value = "";
+      renderMatPricingInSettings();
+      break;
+    }
+    case "quickAddThick": {
+      const mat = el.dataset.mat;
+      if($("#newMatName")) $("#newMatName").value = mat;
+      if($("#newMatThick")) { $("#newMatThick").value = ""; $("#newMatThick").focus(); }
+      if($("#newMatRate")) $("#newMatRate").value = "";
+      $("#newMatThick")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      break;
+    }
+    case "rmMatPrice": {
+      const idx = +el.dataset.idx;
+      if(S._tempMatPricing && S._tempMatPricing[idx] !== undefined){
+        const removed = S._tempMatPricing.splice(idx, 1)[0];
+        toast(`Removed rate for ${removed?.material || "material"}`);
+        renderMatPricingInSettings();
+      }
+      break;
+    }
     case "rmSettingLogo": e.stopPropagation(); S._settingsLogoId = null; renderSettingsMedia(); break;
     case "rmSettingQr": e.stopPropagation(); S._settingsQrId = null; renderSettingsMedia(); break;
     default: if(EXPORTS[a]) EXPORTS[a]();
@@ -1892,11 +2204,16 @@ function fillDocForm(d){
 document.addEventListener("input", e => {
   const t=e.target;
   if(t.id==="q"){ S.q[t.dataset.key]=t.value; render(); return; }
+  if(t.classList.contains("mat-rate-in")){
+    const idx = +t.dataset.idx;
+    if(S._tempMatPricing && S._tempMatPricing[idx]){
+      S._tempMatPricing[idx].rate = t.value !== "" ? +t.value : 0;
+    }
+    return;
+  }
   if(t.closest("#docForm")){
-    if(t.name==="material"){ const m=S.materials.find(x=>x.name===t.value); const r=t.closest(".item");
-      if(m){ const rate = m.saleRate || ""; if(rate) $("[name=rate]",r).value=rate; if(m.thick) $("[name=thick]",r).value=m.thick; if(m.hsn) $("[name=hsn]",r).value=m.hsn;
-        const v = (m.unit||"").toLowerCase().startsWith("sq") ? "sqft" : "unit"; const b=$(`[data-act=pricing][data-v=${v}]`,r); if(b && r.dataset.pricing!==v) b.click(); if(v==="unit" && m.unit) $("[name=unit]",r).value=m.unit; }
-      else { const rate=(S.settings.matRates||{})[t.value]; if(rate && !$("[name=rate]",r).value) $("[name=rate]",r).value=rate; } }
+    if(t.name==="material") onMaterialOrThickChange(t.closest(".item"), "material");
+    if(t.name==="thick") onMaterialOrThickChange(t.closest(".item"), "thick");
     if(t.name==="cname"){ const c=clientNames().get(t.value); if(c){ const f=t.form; ["phone","address","gstin"].forEach(k=>{ if(!f["c"+k].value) f["c"+k].value=c[k]||""; }); if(c.state) f.cstate.value=c.state; } }
     if(t.name==="date" && !t.form.dataset.id){ const isQ=t.form.dataset.kind==="quote"; const nn=nextNo(isQ?S.quotes:S.invoices, isQ?(S.settings.quotePrefix||"QT"):(S.settings.invPrefix||"INV"), t.value); if(/\/\d{2}-\d{2}\/\d+$/.test(t.form.no.value)) t.form.no.value=nn.no; }
     recalcForm();
@@ -1904,7 +2221,11 @@ document.addEventListener("input", e => {
 });
 document.addEventListener("change", async e => {
   const t=e.target;
-  if(t.closest("#docForm")) recalcForm();
+  if(t.closest("#docForm")){
+    if(t.name==="material") onMaterialOrThickChange(t.closest(".item"), "material");
+    if(t.name==="thick") onMaterialOrThickChange(t.closest(".item"), "thick");
+    recalcForm();
+  }
   if((t.id==="fileIn"||t.id==="fileCam") && t.files.length){ handleFiles([...t.files]); t.value=""; }
   if(t.id==="logoIn" && t.files.length){
     const file = t.files[0]; t.value=""; toast("Uploading logo…");

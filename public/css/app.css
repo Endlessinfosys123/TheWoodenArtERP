@@ -446,3 +446,27 @@ body.khata-locked main, body.khata-locked header, body.khata-locked nav, body.kh
   flex-direction: column;
   gap: 8px;
 }
+
+/* Material thickness chips and hints in items */
+.thick-hints{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:2px 0 4px}
+.th-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:18px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s ease;user-select:none}
+.th-chip:hover{border-color:var(--accent);background:var(--surface)}
+.th-chip.active{border-color:var(--accent);background:var(--accent);color:#fff}
+.th-chip .rate-badge{font-size:11px;font-weight:600;opacity:.85;background:rgba(0,0,0,0.06);padding:1px 6px;border-radius:8px}
+.th-chip.active .rate-badge{opacity:1;background:rgba(255,255,255,0.25);color:#fff}
+
+/* Settings material pricing table and groups */
+.mat-pricing-wrap{display:flex;flex-direction:column;gap:10px}
+.mat-group{background:var(--surface);border:1px solid var(--line);border-radius:11px;overflow:hidden}
+.mat-group-hd{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--surface-2);border-bottom:1px solid var(--line);font-size:13px;font-weight:700}
+.mat-group-badge{display:inline-flex;align-items:center;gap:6px;color:var(--ink)}
+.mat-tag{display:inline-block;padding:2px 7px;font-size:11px;font-weight:600;border-radius:6px;background:rgba(11,107,93,0.12);color:var(--accent)}
+.mat-rates-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(210px, 1fr));gap:8px;padding:10px}
+.mat-rate-card{display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);gap:8px}
+.mat-rate-card .info{display:flex;flex-direction:column;min-width:0;flex:1}
+.mat-rate-card .th{font-size:13px;font-weight:700;color:var(--ink)}
+.mat-rate-card .input-wrap{display:flex;align-items:center;gap:4px;flex:none}
+.mat-rate-card input{width:75px;height:32px;border:1px solid var(--line);border-radius:6px;text-align:right;font-size:13px;font-weight:600;padding:0 6px}
+.mat-rate-card .unit{font-size:11px;color:var(--muted)}
+.mat-rate-card .rm-btn{width:28px;height:28px;border:0;background:none;color:var(--bad);cursor:pointer;border-radius:6px;font-size:16px;display:grid;place-items:center;flex:none}
+.mat-rate-card .rm-btn:hover{background:rgba(220,38,38,0.1)}
