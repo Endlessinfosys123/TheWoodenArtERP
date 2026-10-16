@@ -198,9 +198,36 @@ const I = {
   wa:'<path d="M20 12a8 8 0 0 1-11.8 7L4 20l1.1-4A8 8 0 1 1 20 12z"/>',
   edit:'<path d="M4 20h4L19 9l-4-4L4 16z"/>',
   trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
-  box:'<path d="M21 8 12 3 3 8v8l9 5 9-5z"/>'
+  box:'<path d="M21 8 12 3 3 8v8l9 5 9-5z"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+  moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/>'
 };
-const svg = (k, sw=2) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[k]}</svg>`;
+const svg = (k, sw=2) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[k]||""}</svg>`;
+
+/* ---------- theme management ---------- */
+function getActiveTheme(){
+  return document.documentElement.getAttribute("data-theme") || (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+}
+function updateThemeToggleUI(t){
+  const theme = t || getActiveTheme();
+  const btn = $("#btnThemeToggle");
+  if(btn){
+    const isDark = theme === "dark";
+    btn.innerHTML = isDark ? svg("sun") : svg("moon");
+    btn.setAttribute("title", isDark ? "Switch to Light Theme" : "Switch to Dark Theme");
+    btn.setAttribute("aria-label", isDark ? "Switch to Light Theme" : "Switch to Dark Theme");
+  }
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if(meta) meta.setAttribute("content", theme === "dark" ? "#0A110F" : "#0B6B5D");
+}
+function toggleTheme(){
+  const cur = getActiveTheme();
+  const next = cur === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try{ localStorage.setItem("khata_theme", next); }catch(e){}
+  updateThemeToggleUI(next);
+  toast(next === "dark" ? "🌙 Dark theme active" : "☀️ Light theme active");
+}
 
 /* ---------- runtime ----------
    Inside claude.ai the page uses window.claude (Artifact runtime).
@@ -351,6 +378,7 @@ function renderNav(){
 
 /* ---------- views ---------- */
 function render(){
+  updateThemeToggleUI();
   renderNav();
   const v=$("#view");
   let html="";
@@ -2077,6 +2105,7 @@ document.addEventListener("click", async e => {
     case "month": S.month=shiftMonth(S.month, +el.dataset.n); render(); break;
     case "close": closeSheet(); break;
     case "back": S._back ? S._back() : closeSheet(); break;
+    case "toggleTheme": toggleTheme(); break;
     case "settings": settingsForm(); break;
     case "quickLock": if(window.KhataLock) { if(window.KhataLock.isLockEnabled()) window.KhataLock.lock(); else window.KhataLock.openLockSettingsModal(); } break;
     case "screenLockSettings": if(window.KhataLock) window.KhataLock.openLockSettingsModal(); break;
