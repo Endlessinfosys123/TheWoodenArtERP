@@ -881,7 +881,7 @@ async function buildPDFDoc(d, kind){
 
   // 6. Payment Details & Amount Summary Section
   let qrImg = null;
-  if(st.qrId) {
+  if(!isQ && st.qrId) {
     qrImg = await loadImg(st.qrId);
   }
 
@@ -918,7 +918,7 @@ async function buildPDFDoc(d, kind){
   const maxRows = Math.max(numPaymentRows, numSummaryRows);
   const rowHeight = 5.6;
   const boxHeaderH = 6.5;
-  const totalBoxH = boxHeaderH + maxRows * rowHeight;
+  const totalBoxH = isQ ? (boxHeaderH + numSummaryRows * rowHeight) : (boxHeaderH + maxRows * rowHeight);
 
   if(y + totalBoxH + 45 > H - 15) {
     doc.addPage();
@@ -927,8 +927,45 @@ async function buildPDFDoc(d, kind){
 
   const startY = y;
 
-  if(qrImg && qrImg.w && qrImg.h) {
-    // 3 columns: Bank Details (82mm), QR Box (34mm), Summary (64mm)
+  if(isQ) {
+    // Quotations: No Bank Details & No Payment QR code. Only Amount Summary on the right!
+    const wSum = 85;
+    const xSum = W - M - wSum;
+
+    doc.setDrawColor(...BORDER);
+    doc.setLineWidth(0.3);
+    doc.setFillColor(...TH_BG);
+    doc.rect(xSum, startY, wSum, boxHeaderH, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...INK);
+    doc.text("Amount Summary", xSum + wSum / 2, startY + 4.5, { align: "center" });
+
+    let sy = startY + boxHeaderH;
+    const wSumLabel = 48;
+    summaryRows.forEach(([k, v]) => {
+      doc.rect(xSum, sy, wSum, rowHeight, "S");
+      doc.line(xSum + wSumLabel, sy, xSum + wSumLabel, sy + rowHeight);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.8);
+      doc.text(k, xSum + 2.5, sy + 3.9);
+      doc.setFont("helvetica", "normal");
+      doc.text(v, xSum + wSum - 2.5, sy + 3.9, { align: "right" });
+      sy += rowHeight;
+    });
+
+    // Grand Total Row
+    doc.setFillColor(...GRAND_BG);
+    doc.rect(xSum, sy, wSum, rowHeight, "FD");
+    doc.line(xSum + wSumLabel, sy, xSum + wSumLabel, sy + rowHeight);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.2);
+    doc.text("Grand Total", xSum + 2.5, sy + 3.9);
+    doc.text(pdfAmt(c.total), xSum + wSum - 2.5, sy + 3.9, { align: "right" });
+    sy += rowHeight;
+
+  } else if(qrImg && qrImg.w && qrImg.h) {
+    // Invoices with Payment QR: 3 columns: Bank Details (82mm), QR Box (34mm), Summary (64mm)
     const wBank = 82;
     const wQr = 34;
     const wSum = 64;
@@ -1019,7 +1056,7 @@ async function buildPDFDoc(d, kind){
     }
 
   } else {
-    // 2 columns: Bank Details (104mm), Summary (78mm)
+    // Invoices without QR: 2 columns: Bank Details (104mm), Summary (78mm)
     const wBank = 104;
     const wSum = 78;
     const xBank = M;
@@ -1094,10 +1131,14 @@ async function buildPDFDoc(d, kind){
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8.2);
   doc.setTextColor(...INK);
-  doc.text("Payment terms and info & instructions", M, y);
+  doc.text(isQ ? "Terms & Conditions" : "Payment terms and info & instructions", M, y);
   y += 4.2;
 
-  const defaultBullets = [
+  const defaultBullets = isQ ? [
+    "This quotation is valid for 15 days from the date of issue.",
+    "Order confirmation will be processed upon approval and agreement of terms.",
+    "Goods once delivered will not be returned or exchanged, except in case of manufacturing defects."
+  ] : [
     "100% payment is required before delivery. Delivery will be scheduled after payment confirmation.",
     "Goods once delivered will not be returned or exchanged, except in case of manufacturing defects.",
     "Please verify all order details before payment."
