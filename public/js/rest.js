@@ -4,7 +4,7 @@
 (function () {
   "use strict";
   const API = "/api";
-  const COLS = ["invoices", "quotes", "txns", "materials", "moves", "vendors", "bills"];
+  const COLS = ["invoices", "quotes", "txns", "materials", "moves", "vendors", "bills", "clients"];
   const TOKEN_KEY = "khata_token";
   const POLL_MS = 20000;
 

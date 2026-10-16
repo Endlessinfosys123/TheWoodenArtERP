@@ -7,7 +7,7 @@ const { newId, ah } = require("../util");
 // App collection name -> database table
 const TABLES = {
   invoices: "invoices", quotes: "quotations", txns: "transactions", materials: "materials",
-  moves: "stock_moves", vendors: "vendors", bills: "vendor_bills",
+  moves: "stock_moves", vendors: "vendors", bills: "vendor_bills", clients: "clients",
 };
 const MAX_BYTES = 256 * 1024;
 
@@ -27,10 +27,10 @@ const row = (r) => ({ id: r.id, ...r.data, createdAt: Number(r.created_at) });
 // Everything the app needs on open, in one request.
 router.get("/", ah(async (req, res) => {
   const out = {};
-  await Promise.all(Object.entries(TABLES).map(async ([col, t]) => {
+  for (const [col, t] of Object.entries(TABLES)) {
     const { rows } = await query(`select id, data, created_at from ${t} order by created_at desc limit 5000`);
     out[col] = rows.map(row);
-  }));
+  }
   const s = await query("select data from settings where id='company'");
   out.settings = s.rows[0]?.data || {};
   res.json(out);

@@ -9,7 +9,7 @@ const UNITS = ["Sq.ft","Nos","Pcs","Kg","g","Ltr","Mtr","Ft","Sq.ft","Box","Bag"
 const MODES = ["Cash","UPI","Bank transfer","Cheque","Card"];
 const INC_CATS = ["Sales (no invoice)","Service","Advance received","Interest","Other income"];
 const EXP_CATS = ["Material purchase","Salary / Wages","Rent","Electricity","Transport","Fuel","Repair & maintenance","Office supplies","Phone / Internet","Food & tea","Tax / Fees","Other expense"];
-const COLS = ["invoices","quotes","txns","materials","moves","vendors","bills"];
+const COLS = ["invoices","quotes","txns","materials","moves","vendors","bills","clients"];
 
 const I = {
   home:'<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
@@ -43,7 +43,7 @@ const fileUrl = id => MODE === "rest" ? window.KhataRest.fileUrl(id) : "/_blob/"
 const S = {
   db:null, user:null, assets:null, dl:null, uid:null, canWrite:true, isAdmin:true, ready:false, offline:false,
   settings:{}, settingsVersion:0,
-  invoices:[], quotes:[], txns:[], materials:[], moves:[], vendors:[], bills:[],
+  invoices:[], quotes:[], txns:[], materials:[], moves:[], vendors:[], bills:[], clients:[],
   loaded:new Set(),
   view:"home", sub:{sales:"inv", money:"all", stock:"mat", vendors:"bills"},
   month: today().slice(0,7), q:{},
@@ -203,7 +203,7 @@ function render(){
 function fabFor(){
   switch(S.view){
     case "home": return null;
-    case "sales": return S.sub.sales==="inv" ? ["newInvoice","New invoice"] : ["newQuote","New quotation"];
+    case "sales": return S.sub.sales==="inv" ? ["newInvoice","New invoice"] : S.sub.sales==="quo" ? ["newQuote","New quotation"] : ["newClient","Add client"];
     case "money": return ["newTxn", S.sub.money==="income"?"Add income":"Add expense", `data-type="${S.sub.money==="income"?"income":"expense"}"`];
     case "stock": return ["newMaterial","Add material"];
     case "vendors": return S.sub.vendors==="bills" ? ["newBill","Upload bill"] : ["newVendor","Add vendor"];
@@ -277,7 +277,7 @@ function ledgerRow(x){
 
 /* SALES */
 function vSales(){
-  let h = `<h2 class="vt">Sales</h2>` + seg("sales",[["inv",`Invoices (${S.invoices.length})`],["quo",`Quotations (${S.quotes.length})`]]);
+  let h = `<h2 class="vt">Sales</h2>` + seg("sales",[["inv",`Invoices (${S.invoices.length})`],["quo",`Quotations (${S.quotes.length})`],["cli",`Clients (${S.clients.length})`]]);
   if(S.sub.sales==="inv"){
     const list = S.invoices.filter(i=>match("inv", i.no, i.client?.name, i.client?.phone)).sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.seq||0)-(a.seq||0));
     const recv = sum(S.invoices.filter(i=>invStatus(i)!=="paid"), i=>(+i.total||0)-paidOf(i));
@@ -286,12 +286,24 @@ function vSales(){
     h += !S.invoices.length ? emptyBox("No invoices yet","Create a GST or simple invoice, download it as PDF and share on WhatsApp.","newInvoice","New invoice")
       : !list.length ? `<p class="muted">No invoice matches “${esc(S.q.inv)}”.</p>`
       : `<div class="list">${list.map(i=>{ const st=invStatus(i); return `<button class="row" data-act="openInvoice" data-id="${i.id}"><div class="av n">${esc(initials(i.client?.name))}</div><div class="main"><div class="t">${esc(i.client?.name||"Client")}</div><div class="s"><span class="mono">${esc(i.no)}</span> · ${fmtDate(i.date)}${i.gstMode==="gst"?" · GST":""}</div></div><div class="amt"><b>${inr(i.total)}</b><span class="chip ${st}">${st}</span></div></button>`; }).join("")}</div>`;
-  } else {
+  } else if(S.sub.sales==="quo"){
     const list = S.quotes.filter(q=>match("quo", q.no, q.client?.name)).sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.seq||0)-(a.seq||0));
     h += `<div class="bar">${searchBar("quo","Search quotation no. or client")}</div>`;
     h += !S.quotes.length ? emptyBox("No quotations yet","Send a price quotation to a client. When they agree, convert it to an invoice in one tap.","newQuote","New quotation")
       : !list.length ? `<p class="muted">No quotation matches.</p>`
       : `<div class="list">${list.map(q=>{ const st=q.status||"sent"; return `<button class="row" data-act="openQuote" data-id="${q.id}"><div class="av n">${esc(initials(q.client?.name))}</div><div class="main"><div class="t">${esc(q.client?.name||"Client")}</div><div class="s"><span class="mono">${esc(q.no)}</span> · ${fmtDate(q.date)}</div></div><div class="amt"><b>${inr(q.total)}</b><span class="chip ${st}">${st}</span></div></button>`; }).join("")}</div>`;
+  } else {
+    const list = S.clients.filter(c=>match("cli", c.name, c.phone, c.gstin, c.address)).sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+    h += `<div class="bar">${searchBar("cli","Search client name, phone or GSTIN")}</div>`;
+    h += !S.clients.length ? emptyBox("No clients yet","Add clients to track their invoices, quotations, and outstanding payments.","newClient","Add client")
+      : !list.length ? `<p class="muted">No client matches “${esc(S.q.cli)}”.</p>`
+      : `<div class="list">${list.map(c=>{
+          const invs = S.invoices.filter(i=>(i.client?.id===c.id) || (i.client?.name && i.client.name.trim().toLowerCase()===(c.name||"").trim().toLowerCase()));
+          const billed = sum(invs, i=>+i.total||0);
+          const received = sum(invs, paidOf);
+          const due = billed - received;
+          return `<button class="row" data-act="openClient" data-id="${c.id}"><div class="av n">${esc(initials(c.name))}</div><div class="main"><div class="t">${esc(c.name)}</div><div class="s">${esc([c.phone, c.gstin&&("GSTIN "+c.gstin), c.state].filter(Boolean).join(" · ")||"—")}</div></div><div class="amt"><b>${inr(Math.max(0,due))}</b><span class="small muted">${due>0?"due":"clear"} · ${invs.length} inv</span></div></button>`;
+        }).join("")}</div>`;
   }
   return h;
 }
@@ -369,7 +381,7 @@ function closeSheet(){ S.sheet=null; S.formFiles=[]; S._fromQuote=null; $("#shee
 function refreshSheet(){
   const s=S.sheet; if(!s || s.kind!=="detail") return;
   const b=$(".sheet-b"); const top=b?b.scrollTop:0;
-  const fn = {invoice:dInvoice, quote:dQuote, txn:dTxn, material:dMaterial, vendor:dVendor, bill:dBill, move:dMove}[s.type];
+  const fn = {invoice:dInvoice, quote:dQuote, txn:dTxn, material:dMaterial, vendor:dVendor, bill:dBill, move:dMove, client:dClient}[s.type];
   S._refreshing = true;
   if(fn){ fn(s.id, true); const nb=$(".sheet-b"); if(nb) nb.scrollTop=top; }
   S._refreshing = false;
@@ -424,8 +436,12 @@ async function saveFile(id, name){
   catch(e){ if(e?.code!=="declined") toast("Could not save the file."); }
 }
 
-/* ---------- invoice / quotation form ---------- */
-function clientNames(){ const m=new Map(); [...S.invoices,...S.quotes].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)).forEach(d=>{ if(d.client?.name) m.set(d.client.name, d.client); }); return m; }
+function clientNames(){
+  const m=new Map();
+  (S.clients||[]).forEach(c => { if(c.name) m.set(c.name, c); });
+  [...S.invoices,...S.quotes].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)).forEach(d=>{ if(d.client?.name && !m.has(d.client.name)) m.set(d.client.name, d.client); });
+  return m;
+}
 function itemRow(it={}, gst, prev){
   const p = it.pricing || (it.desc && !it.material && it.rate!==undefined && !it.l ? "unit" : (prev?.pricing || "sqft"));
   const du = it.du || prev?.du || S.settings.dimUnit || "in";
@@ -536,6 +552,16 @@ async function saveDoc(form){
   }, `${isQ?"Quotation":"Invoice"} ${doc.no} saved`);
   if(btn) btn.disabled=false;
   if(ok){
+    const cName = doc.client?.name?.trim();
+    if(cName){
+      const existingCli = S.clients.find(x => (x.name||"").trim().toLowerCase() === cName.toLowerCase());
+      if(!existingCli){
+        const newC = { name: cName, phone: doc.client.phone||"", gstin: doc.client.gstin||"", address: doc.client.address||"", state: doc.client.state||"", notes:"", createdAt: Date.now(), updatedAt: Date.now(), ...uidMeta() };
+        const cliRef = S.db.collection("clients").doc();
+        cliRef.set(newC).catch(()=>{});
+        S.clients.push({ id: cliRef.id, ...newC });
+      }
+    }
     if(fromQ) await write(()=>S.db.collection("quotes").doc(fromQ.id).update({status:"accepted", invoiceId:ref.id, invoiceNo:doc.no}));
     closeSheet(); (isQ?dQuote:dInvoice)(ref.id);
   }
@@ -561,7 +587,7 @@ function dInvoice(id, refresh){
   let b = `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="min-width:0"><div class="mono muted">${esc(d.no)}</div><div style="font-weight:700;font-size:17px">${esc(cl.name)}</div><div class="small muted">${esc([cl.phone, cl.gstin&&("GSTIN "+cl.gstin)].filter(Boolean).join(" · "))}</div></div><span class="chip ${st}">${st}</span></div>
   <div class="big" style="margin-top:8px">${inr(d.total)}</div>
   <dl class="dl" style="margin-top:6px"><dt>Date</dt><dd>${fmtDate(d.date)}</dd><dt>Due</dt><dd>${fmtDate(d.dueDate)}</dd><dt>Received</dt><dd class="num" style="color:var(--good)">${inr(paid)}</dd><dt>Balance</dt><dd class="num" style="font-weight:700">${inr(Math.max(0,due))}</dd>${d.quoteNo?`<dt>From quotation</dt><dd class="mono">${esc(d.quoteNo)}</dd>`:""}</dl>
-  <div class="actions"><button class="btn pri" data-act="pdf" data-kind="invoice" data-id="${d.id}">${svg("dl")}PDF</button><a class="btn" target="_blank" rel="noopener" href="${waLink(d,"invoice")}">${svg("wa")}WhatsApp</a>${S.canWrite&&st!=="paid"?`<button class="btn" data-act="payInvoice" data-id="${d.id}">Record payment</button>`:""}</div>`;
+  <div class="actions"><button class="btn pri" data-act="pdf" data-kind="invoice" data-id="${d.id}">${svg("dl")}PDF</button><button class="btn" data-act="shareWhatsApp" data-kind="invoice" data-id="${d.id}">${svg("wa")}WhatsApp</button>${S.canWrite&&st!=="paid"?`<button class="btn" data-act="payInvoice" data-id="${d.id}">Record payment</button>`:""}</div>`;
   if((d.payments||[]).length){ b += `<div class="legend-s">Payments received</div><div class="list">${d.payments.map((p,i)=>`<div class="row" style="cursor:default"><div class="av in">${svg("up")}</div><div class="main"><div class="t">${inr(p.amount)}</div><div class="s">${fmtDate(p.date)} · ${esc(p.mode||"")}${p.note?" · "+esc(p.note):""}</div></div>${S.canWrite?`<button class="btn sm danger" data-act="rmPay" data-col="invoices" data-id="${d.id}" data-i="${i}" aria-label="Remove payment">${svg("trash")}</button>`:""}</div>`).join("")}</div>`; }
   b += `<div class="legend-s">Items</div>` + docBody(d,"invoice");
   if(S.canWrite) b += `<div class="actions" style="margin-top:18px"><button class="btn" data-act="editInvoice" data-id="${d.id}">${svg("edit")}Edit</button><button class="btn" data-act="dupInvoice" data-id="${d.id}">Duplicate</button><button class="btn danger" data-act="delDoc" data-col="invoices" data-id="${d.id}">${svg("trash")}Delete</button></div>`;
@@ -574,7 +600,7 @@ function dQuote(id, refresh){
   let b = `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="min-width:0"><div class="mono muted">${esc(d.no)}</div><div style="font-weight:700;font-size:17px">${esc(cl.name)}</div><div class="small muted">${esc(cl.phone||"")}</div></div><span class="chip ${st}">${st}</span></div>
   <div class="big" style="margin-top:8px">${inr(d.total)}</div>
   <dl class="dl" style="margin-top:6px"><dt>Date</dt><dd>${fmtDate(d.date)}</dd><dt>Valid till</dt><dd>${fmtDate(d.validTill)}</dd>${d.invoiceNo?`<dt>Invoice</dt><dd class="mono">${esc(d.invoiceNo)}</dd>`:""}</dl>
-  <div class="actions"><button class="btn pri" data-act="pdf" data-kind="quote" data-id="${d.id}">${svg("dl")}PDF</button><a class="btn" target="_blank" rel="noopener" href="${waLink(d,"quote")}">${svg("wa")}WhatsApp</a>${S.canWrite&&!d.invoiceId?`<button class="btn" data-act="convertQuote" data-id="${d.id}">Convert to invoice</button>`:""}</div>`;
+  <div class="actions"><button class="btn pri" data-act="pdf" data-kind="quote" data-id="${d.id}">${svg("dl")}PDF</button><button class="btn" data-act="shareWhatsApp" data-kind="quote" data-id="${d.id}">${svg("wa")}WhatsApp</button>${S.canWrite&&!d.invoiceId?`<button class="btn" data-act="convertQuote" data-id="${d.id}">Convert to invoice</button>`:""}</div>`;
   if(S.canWrite) b += `<div class="seg" role="group" style="margin-top:8px">${["sent","accepted","rejected"].map(s=>`<button data-act="quoteStatus" data-id="${d.id}" data-v="${s}" aria-pressed="${st===s}">${s[0].toUpperCase()+s.slice(1)}</button>`).join("")}</div>`;
   b += `<div class="legend-s">Items</div>` + docBody(d,"quote");
   if(S.canWrite) b += `<div class="actions" style="margin-top:18px"><button class="btn" data-act="editQuote" data-id="${d.id}">${svg("edit")}Edit</button><button class="btn danger" data-act="delDoc" data-col="quotes" data-id="${d.id}">${svg("trash")}Delete</button></div>`;
@@ -633,8 +659,8 @@ async function loadImg(idOrUrl){
   }
 }
 
-async function makePDF(d, kind){
-  if(!window.jspdf){ toast("PDF tool did not load. Check internet and reopen."); return; }
+async function buildPDFDoc(d, kind){
+  if(!window.jspdf){ toast("PDF tool did not load. Check internet and reopen."); return null; }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:"mm", format:"a4"});
   const W=210, H=297, M=13;
@@ -1133,12 +1159,57 @@ async function makePDF(d, kind){
 
   const fname = `${(isQ ? "Quotation" : "Invoice")}_${(d.no || "").replace(/[^\w-]+/g, "-")}_${(cl.name || "").replace(/[^\w]+/g, "-").slice(0, 30)}.pdf`.replace(/-+/g, "-");
   const blob = doc.output("blob");
+  return { doc, blob, fname };
+}
+
+async function makePDF(d, kind){
+  const res = await buildPDFDoc(d, kind);
+  if(!res) return;
+  const { blob, fname } = res;
   if(!S.dl) { toast("Download not available in this view."); return; }
   try {
     await S.dl.save({ filename: fname, data: blob });
   } catch(e) {
     if(e?.code !== "declined") toast("Could not save PDF.");
   }
+}
+
+async function shareWhatsApp(d, kind){
+  toast("Preparing PDF for WhatsApp…");
+  const res = await buildPDFDoc(d, kind);
+  if(!res) return;
+  const { blob, fname } = res;
+  const co = S.settings.name || "us";
+  const isQ = kind === "quote";
+  const txt = `Hello ${d.client?.name || ""},\n${isQ ? "Quotation" : "Invoice"} ${d.no} dated ${fmtDate(d.date)} from ${co}.\nAmount: Rs. ${pdfAmt(d.total)}${!isQ && d.dueDate ? `\nDue by: ${fmtDate(d.dueDate)}` : ""}${!isQ && S.settings.upi ? `\nPay via UPI: ${S.settings.upi}` : ""}\nPDF attached. Thank you!`;
+  const ph = (d.client?.phone || "").replace(/\D/g, "");
+  const num = ph.length === 10 ? "91" + ph : ph;
+
+  let file = null;
+  try {
+    file = new File([blob], fname, { type: "application/pdf" });
+  } catch(e) {}
+
+  if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({
+        files: [file],
+        title: fname,
+        text: txt,
+      });
+      return;
+    } catch(err) {
+      if(err?.name === "AbortError") return;
+    }
+  }
+
+  // Fallback for desktop / browsers without Web Share file support:
+  try {
+    if (S.dl) await S.dl.save({ filename: fname, data: blob });
+  } catch(e) {}
+  const waUrl = `https://wa.me/${num}?text=${encodeURIComponent(txt)}`;
+  window.open(waUrl, "_blank");
+  toast("PDF download ho gaya hai! WhatsApp chat me attach karein.");
 }
 
 /* ---------- txn ---------- */
@@ -1263,6 +1334,51 @@ function dVendor(id, refresh){
   b+=`<div class="legend-s">Bills (${bs.length})</div>` + (bs.length?`<div class="list">${bs.map(x=>{const st=billStatus(x); return `<button class="row" data-act="openBill" data-id="${x.id}"><div class="av out">${svg("receipt")}</div><div class="main"><div class="t">${esc(x.billNo||"Bill")}</div><div class="s">${fmtDate(x.date)}</div></div><div class="amt"><b>${inr(x.amount)}</b><span class="chip ${st}">${st}</span></div></button>`;}).join("")}</div>`:`<p class="small muted">No bills yet.</p>`);
   if(S.canWrite) b+=`<div class="actions" style="margin-top:18px"><button class="btn" data-act="editVendor" data-id="${id}">${svg("edit")}Edit</button><button class="btn danger" data-act="delVendor" data-id="${id}">${svg("trash")}Delete</button></div>`;
   openSheet(v.name, b, "", {kind:"detail", type:"vendor", id});
+}
+function clientForm(c, after){
+  c=c||{}; S._afterClient = after||null;
+  openSheet(c.id?"Edit client":"Add client", `<form id="cliForm" data-form="cli" data-id="${c.id||""}"><div class="fg">
+    <label class="f full"><span>Client / Party name</span><input name="name" required value="${esc(c.name||"")}"></label>
+    <label class="f"><span>Phone</span><input name="phone" type="tel" inputmode="tel" value="${esc(c.phone||"")}"></label>
+    <label class="f"><span>GSTIN</span><input name="gstin" maxlength="15" style="text-transform:uppercase" value="${esc(c.gstin||"")}"></label>
+    <label class="f full"><span>Address</span><input name="address" value="${esc(c.address||"")}"></label>
+    <label class="f full"><span>State</span><select name="state"><option value="">Select state</option>${STATES.map(s=>`<option ${s===(c.state||S.settings.state)?"selected":""}>${s}</option>`).join("")}</select></label>
+    <label class="f full"><span>Notes</span><input name="notes" value="${esc(c.notes||"")}" placeholder="e.g. Regular client, Interior designer"></label>
+  </div></form>`, `<button class="btn" data-act="close">Cancel</button><button class="btn pri" type="submit" form="cliForm">Save</button>`);
+}
+async function saveCli(form){
+  const id=form.dataset.id;
+  const c={ name:form.name.value.trim(), phone:form.phone.value.trim(), gstin:form.gstin.value.trim().toUpperCase(), address:form.address.value.trim(), state:form.state.value, notes:form.notes.value.trim(), updatedAt:Date.now() };
+  if(!c.name){ toast("Enter a client name."); return; }
+  let ref;
+  const ok = await write(async()=>{
+    if(id){ ref=S.db.collection("clients").doc(id); await ref.update(c); }
+    else { ref=S.db.collection("clients").doc(); await ref.set({...c, createdAt:Date.now(), ...uidMeta()}); }
+  }, "Client saved");
+  if(!ok) return;
+  if(!id && !S.clients.some(x=>x.id===ref.id)) S.clients.push({id:ref.id, ...c});
+  if(S._afterClient){ const f=S._afterClient; S._afterClient=null; f(ref.id); }
+  else { closeSheet(); dClient(ref.id); }
+}
+function dClient(id, refresh){
+  const c=S.clients.find(x=>x.id===id); if(!c){ missing("client",id,refresh); return; }
+  const invs=S.invoices.filter(i=>(i.client?.id===id) || (i.client?.name && i.client.name.trim().toLowerCase()===(c.name||"").trim().toLowerCase())).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+  const quotes=S.quotes.filter(q=>(q.client?.id===id) || (q.client?.name && q.client.name.trim().toLowerCase()===(c.name||"").trim().toLowerCase())).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+  const billed=sum(invs, i=>+i.total||0), received=sum(invs, paidOf), due=billed-received;
+  const ph = (c.phone||"").replace(/\D/g,""); const num = ph.length===10 ? "91"+ph : ph;
+  let b=`<div class="tiles"><div class="tile"><div class="k">Billed</div><div class="v num">${inrShort(billed)}</div></div><div class="tile good"><div class="k">Received</div><div class="v num">${inrShort(received)}</div></div><div class="tile ${due>0?"bad":"good"}"><div class="k">Due</div><div class="v num">${inrShort(Math.max(0,due))}</div></div></div>
+  <dl class="dl" style="margin-top:12px">
+    ${c.phone?`<dt>Phone</dt><dd style="display:flex;align-items:center;gap:10px">${esc(c.phone)}<a href="tel:${esc(c.phone)}" class="btn sm" style="padding:2px 8px">Call</a><a href="https://wa.me/${num}" target="_blank" rel="noopener" class="btn sm" style="padding:2px 8px">${svg("wa",1.8)} WhatsApp</a></dd>`:""}
+    ${c.gstin?`<dt>GSTIN</dt><dd class="mono">${esc(c.gstin)}</dd>`:""}
+    ${c.state?`<dt>State</dt><dd>${esc(c.state)}</dd>`:""}
+    ${c.address?`<dt>Address</dt><dd>${esc(c.address)}</dd>`:""}
+    ${c.notes?`<dt>Notes</dt><dd>${esc(c.notes)}</dd>`:""}
+  </dl>`;
+  if(S.canWrite) b+=`<div class="actions"><button class="btn pri" data-act="newInvoiceForClient" data-id="${id}">${svg("plus")}New Invoice</button><button class="btn" data-act="newQuoteForClient" data-id="${id}">${svg("plus")}New Quotation</button></div>`;
+  b+=`<div class="legend-s">Invoices (${invs.length})</div>` + (invs.length?`<div class="list">${invs.map(i=>{const st=invStatus(i); return `<button class="row" data-act="openInvoice" data-id="${i.id}"><div class="av n">${svg("doc")}</div><div class="main"><div class="t"><span class="mono">${esc(i.no)}</span></div><div class="s">${fmtDate(i.date)}${i.gstMode==="gst"?" · GST":""}</div></div><div class="amt"><b>${inr(i.total)}</b><span class="chip ${st}">${st}</span></div></button>`;}).join("")}</div>`:`<p class="small muted">No invoices for this client yet.</p>`);
+  if(quotes.length) b+=`<div class="legend-s">Quotations (${quotes.length})</div><div class="list">${quotes.map(q=>{const st=q.status||"sent"; return `<button class="row" data-act="openQuote" data-id="${q.id}"><div class="av n">${svg("quote")}</div><div class="main"><div class="t"><span class="mono">${esc(q.no)}</span></div><div class="s">${fmtDate(q.date)}</div></div><div class="amt"><b>${inr(q.total)}</b><span class="chip ${st}">${st}</span></div></button>`;}).join("")}</div>`;
+  if(S.canWrite) b+=`<div class="actions" style="margin-top:18px"><button class="btn" data-act="editClient" data-id="${id}">${svg("edit")}Edit</button><button class="btn danger" data-act="delClient" data-id="${id}">${svg("trash")}Delete</button></div>`;
+  openSheet(c.name, b, "", {kind:"detail", type:"client", id});
 }
 function billForm(b, vendorId){
   b=b||{}; S.formFiles=(b.files||[]).map(f=>({...f})); const vid=b.vendorId||vendorId||"";
@@ -1664,6 +1780,35 @@ document.addEventListener("click", async e => {
     case "moveForm": moveForm(id, el.dataset.type); break;
     case "newVendor": vendorForm(); break;
     case "editVendor": vendorForm(S.vendors.find(x=>x.id===id)); break;
+    case "openClient": dClient(id); break;
+    case "newClient": clientForm(); break;
+    case "editClient": clientForm(S.clients.find(x=>x.id===id)); break;
+    case "delClient": {
+      const c = S.clients.find(x=>x.id===id);
+      const invs = S.invoices.filter(i=>(i.client?.id===id) || (i.client?.name && i.client.name.trim().toLowerCase()===(c?.name||"").trim().toLowerCase()));
+      const quotes = S.quotes.filter(q=>(q.client?.id===id) || (q.client?.name && q.client.name.trim().toLowerCase()===(c?.name||"").trim().toLowerCase()));
+      const totalDocs = invs.length + quotes.length;
+      confirmSheet(`Delete client <b>${esc(c?.name)}</b>?${totalDocs ? ` (${totalDocs} invoices/quotations are linked to this client)` : ""}`, async()=>{
+        const ok = await write(()=>S.db.collection("clients").doc(id).delete(), "Client deleted");
+        if(ok) closeSheet();
+      });
+      break;
+    }
+    case "newInvoiceForClient": {
+      const c = S.clients.find(x=>x.id===id);
+      if(c){ docForm("invoice"); fillDocForm({client:{name:c.name, phone:c.phone, gstin:c.gstin, address:c.address, state:c.state}}); }
+      break;
+    }
+    case "newQuoteForClient": {
+      const c = S.clients.find(x=>x.id===id);
+      if(c){ docForm("quote"); fillDocForm({client:{name:c.name, phone:c.phone, gstin:c.gstin, address:c.address, state:c.state}}); }
+      break;
+    }
+    case "shareWhatsApp": {
+      const d = (el.dataset.kind==="quote"?S.quotes:S.invoices).find(x=>x.id===id);
+      if(d){ el.disabled=true; await shareWhatsApp(d, el.dataset.kind); el.disabled=false; }
+      break;
+    }
     case "newBill": if(!S.vendors.length){ vendorForm(null, vid=>billForm(null, vid)); toast("Add the vendor first"); } else billForm(null, el.dataset.vendor); break;
     case "editBill": billForm(S.bills.find(x=>x.id===id)); break;
     case "payInvoice": payForm("invoices", id); break;
@@ -1734,7 +1879,7 @@ document.addEventListener("change", async e => {
 });
 document.addEventListener("submit", async e => {
   const f=e.target; if(!f.dataset.form) return; e.preventDefault();
-  const fn = {doc:saveDoc, pay:savePay, txn:saveTxn, mat:saveMat, move:saveMove, ven:saveVen, bill:saveBill, set:saveSettings, user:saveUser, pass:savePass, reset:saveReset}[f.dataset.form];
+  const fn = {doc:saveDoc, pay:savePay, txn:saveTxn, mat:saveMat, move:saveMove, ven:saveVen, bill:saveBill, cli:saveCli, set:saveSettings, user:saveUser, pass:savePass, reset:saveReset}[f.dataset.form];
   if(!fn) return;
   await fn(f);
 });

@@ -26,6 +26,7 @@ create table if not exists materials     (id text primary key, data jsonb not nu
 create table if not exists stock_moves   (id text primary key, data jsonb not null, created_at bigint not null, updated_at bigint, created_by text);
 create table if not exists vendors       (id text primary key, data jsonb not null, created_at bigint not null, updated_at bigint, created_by text);
 create table if not exists vendor_bills  (id text primary key, data jsonb not null, created_at bigint not null, updated_at bigint, created_by text);
+create table if not exists clients       (id text primary key, data jsonb not null, created_at bigint not null, updated_at bigint, created_by text);
 
 create table if not exists files (
   id           text primary key,
@@ -42,6 +43,7 @@ create index if not exists quotations_created_idx   on quotations (created_at de
 create index if not exists transactions_created_idx on transactions (created_at desc);
 create index if not exists stock_moves_created_idx  on stock_moves (created_at desc);
 create index if not exists vendor_bills_created_idx on vendor_bills (created_at desc);
+create index if not exists clients_created_idx      on clients (created_at desc);
 
 -- Supabase: these tables are reached only by the server (service connection),
 -- so turn on Row Level Security with no policies to block the public anon API.
@@ -54,4 +56,6 @@ alter table materials    enable row level security;
 alter table stock_moves  enable row level security;
 alter table vendors      enable row level security;
 alter table vendor_bills enable row level security;
+alter table clients      enable row level security;
 alter table files        enable row level security;
+
