@@ -56,11 +56,23 @@ function getMatPricingList(){
   return DEFAULT_MAT_PRICING;
 }
 
+function getDocMaterialsList(){
+  const s = S.settings || {};
+  const list = Array.isArray(s.matPricing) ? s.matPricing : getMatPricingList();
+  const set = new Set();
+  list.forEach(x => {
+    const name = (x.material || "").trim();
+    if(name && name.toLowerCase() !== "other") set.add(name);
+  });
+  const sorted = [...set].sort((a,b) => a.localeCompare(b));
+  sorted.push("Other");
+  return sorted;
+}
+
 function getAllConfiguredMaterials(){
   const list = getMatPricingList();
-  const names = new Set(MATS.filter(m=>m!=="Other"));
+  const names = new Set(["Acrylic","MDF","Corian","MS (Mild Steel)","SS (Stainless Steel)","ACP","WPC","Plywood","Aluminium","Brass","HDHMR","Sunboard","PVC Sheet"]);
   list.forEach(x => { if(x.material && x.material.trim()) names.add(x.material.trim()); });
-  (S.materials||[]).forEach(m => { if(m.name && m.name.trim()) names.add(m.name.trim()); });
   return [...names];
 }
 
@@ -118,7 +130,7 @@ function onMaterialOrThickChange(itemRowElem, changedField){
     if(v === "unit" && m.unit && $("[name=unit]", r)) $("[name=unit]", r).value = m.unit;
   }
 
-  const thList = matVal ? getMaterialThicknesses(matVal) : [];
+  const thList = (matVal && matVal !== "Other") ? getMaterialThicknesses(matVal) : [];
   const thWrap = $("[data-role=thickHints]", r);
   if(thWrap){
     if(thList.length){
@@ -135,6 +147,7 @@ function onMaterialOrThickChange(itemRowElem, changedField){
   }
 
   if(changedField === "material"){
+    if(matVal === "Other") return;
     if(thickVal !== ""){
       const rByTh = getMaterialRate(matVal, thickVal);
       if(rByTh !== null && rateIn) rateIn.value = rByTh;
@@ -147,7 +160,7 @@ function onMaterialOrThickChange(itemRowElem, changedField){
       if(defRate !== null && rateIn) rateIn.value = defRate;
     }
   } else if(changedField === "thick"){
-    if(matVal){
+    if(matVal && matVal !== "Other"){
       const rByTh = getMaterialRate(matVal, thickVal);
       if(rByTh !== null && rateIn) rateIn.value = rByTh;
       if(thWrap){
@@ -173,6 +186,7 @@ const I = {
   money:'<rect x="2" y="6" width="20" height="13" rx="2"/><circle cx="12" cy="12.5" r="2.6"/><path d="M6 10v5M18 10v5"/>',
   stock:'<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
   vendors:'<path d="M3 21V9l9-6 9 6v12"/><path d="M9 21v-7h6v7"/>',
+  clients:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
   up:'<path d="M12 19V5M6 11l6-6 6 6"/>', down:'<path d="M12 5v14M6 13l6 6 6-6"/>',
   doc:'<path d="M7 3h8l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/>',
@@ -330,7 +344,7 @@ function paintBrand(){
 }
 
 /* ---------- nav ---------- */
-const TABS = [["home","Home"],["sales","Sales"],["money","Money"],["stock","Stock"],["vendors","Vendors"]];
+const TABS = [["home","Home"],["sales","Sales"],["clients","Clients"],["money","Money"],["stock","Stock"],["vendors","Vendors"]];
 function renderNav(){
   $("#nav").innerHTML = TABS.map(([k,l]) => `<button data-act="tab" data-v="${k}" aria-current="${S.view===k}"><span class="pill">${svg(k)}</span>${l}</button>`).join("");
 }
@@ -343,7 +357,7 @@ function render(){
   if(S.offline) html += `<div class="banner">Open this app while signed in to claude.ai to load and save your company's data.</div>`;
   else if(!S.canWrite) html += `<div class="banner">You have view-only access. Ask the owner to share it with you as Contributor to add entries.</div>`;
   if(!S.ready && !S.offline){ v.innerHTML = html + `<div class="loading">Loading your books…</div>`; $("#fabHost").innerHTML=""; return; }
-  html += ({home:vHome, sales:vSales, money:vMoney, stock:vStock, vendors:vVendors})[S.view]();
+  html += ({home:vHome, sales:vSales, clients:vClients, money:vMoney, stock:vStock, vendors:vVendors})[S.view]();
   const oldQ = document.activeElement && document.activeElement.id==="q" ? document.activeElement : null;
   const tmp = document.createElement("div"); tmp.innerHTML = html;
   const newQ = tmp.querySelector("#q"); const newBar = newQ && newQ.closest(".bar"); const oldBar = oldQ && oldQ.closest(".bar");
@@ -359,7 +373,8 @@ function render(){
 function fabFor(){
   switch(S.view){
     case "home": return null;
-    case "sales": return S.sub.sales==="inv" ? ["newInvoice","New invoice"] : S.sub.sales==="quo" ? ["newQuote","New quotation"] : ["newClient","Add client"];
+    case "sales": return S.sub.sales==="inv" ? ["newInvoice","New invoice"] : ["newQuote","New quotation"];
+    case "clients": return ["newClient","Add client"];
     case "money": return ["newTxn", S.sub.money==="income"?"Add income":"Add expense", `data-type="${S.sub.money==="income"?"income":"expense"}"`];
     case "stock": return ["newMaterial","Add material"];
     case "vendors": return S.sub.vendors==="bills" ? ["newBill","Upload bill"] : ["newVendor","Add vendor"];
@@ -393,6 +408,7 @@ function vHome(){
   if(S.canWrite && !S.offline) h += `<div class="quick">
     <button data-act="newInvoice"><span class="ic">${svg("doc")}</span>Invoice</button>
     <button data-act="newQuote"><span class="ic">${svg("quote")}</span>Quotation</button>
+    <button data-act="newClient"><span class="ic">${svg("clients")}</span>Client</button>
     <button data-act="newTxn" data-type="expense"><span class="ic">${svg("down")}</span>Expense</button>
     <button data-act="newBill"><span class="ic">${svg("cam")}</span>Vendor bill</button>
   </div>`;
@@ -433,7 +449,7 @@ function ledgerRow(x){
 
 /* SALES */
 function vSales(){
-  let h = `<h2 class="vt">Sales</h2>` + seg("sales",[["inv",`Invoices (${S.invoices.length})`],["quo",`Quotations (${S.quotes.length})`],["cli",`Clients (${S.clients.length})`]]);
+  let h = `<h2 class="vt">Sales</h2>` + seg("sales",[["inv",`Invoices (${S.invoices.length})`],["quo",`Quotations (${S.quotes.length})`]]);
   if(S.sub.sales==="inv"){
     const list = S.invoices.filter(i=>match("inv", i.no, i.client?.name, i.client?.phone)).sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.seq||0)-(a.seq||0));
     const recv = sum(S.invoices.filter(i=>invStatus(i)!=="paid"), i=>(+i.total||0)-paidOf(i));
@@ -442,25 +458,35 @@ function vSales(){
     h += !S.invoices.length ? emptyBox("No invoices yet","Create a GST or simple invoice, download it as PDF and share on WhatsApp.","newInvoice","New invoice")
       : !list.length ? `<p class="muted">No invoice matches “${esc(S.q.inv)}”.</p>`
       : `<div class="list">${list.map(i=>{ const st=invStatus(i); return `<button class="row" data-act="openInvoice" data-id="${i.id}"><div class="av n">${esc(initials(i.client?.name))}</div><div class="main"><div class="t">${esc(i.client?.name||"Client")}</div><div class="s"><span class="mono">${esc(i.no)}</span> · ${fmtDate(i.date)}${i.gstMode==="gst"?" · GST":""}</div></div><div class="amt"><b>${inr(i.total)}</b><span class="chip ${st}">${st}</span></div></button>`; }).join("")}</div>`;
-  } else if(S.sub.sales==="quo"){
+  } else {
     const list = S.quotes.filter(q=>match("quo", q.no, q.client?.name)).sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.seq||0)-(a.seq||0));
     h += `<div class="bar">${searchBar("quo","Search quotation no. or client")}</div>`;
     h += !S.quotes.length ? emptyBox("No quotations yet","Send a price quotation to a client. When they agree, convert it to an invoice in one tap.","newQuote","New quotation")
       : !list.length ? `<p class="muted">No quotation matches.</p>`
       : `<div class="list">${list.map(q=>{ const st=q.status||"sent"; return `<button class="row" data-act="openQuote" data-id="${q.id}"><div class="av n">${esc(initials(q.client?.name))}</div><div class="main"><div class="t">${esc(q.client?.name||"Client")}</div><div class="s"><span class="mono">${esc(q.no)}</span> · ${fmtDate(q.date)}</div></div><div class="amt"><b>${inr(q.total)}</b><span class="chip ${st}">${st}</span></div></button>`; }).join("")}</div>`;
-  } else {
-    const list = S.clients.filter(c=>match("cli", c.name, c.phone, c.gstin, c.address)).sort((a,b)=>(a.name||"").localeCompare(b.name||""));
-    h += `<div class="bar">${searchBar("cli","Search client name, phone or GSTIN")}</div>`;
-    h += !S.clients.length ? emptyBox("No clients yet","Add clients to track their invoices, quotations, and outstanding payments.","newClient","Add client")
-      : !list.length ? `<p class="muted">No client matches “${esc(S.q.cli)}”.</p>`
-      : `<div class="list">${list.map(c=>{
-          const invs = S.invoices.filter(i=>(i.client?.id===c.id) || (i.client?.name && i.client.name.trim().toLowerCase()===(c.name||"").trim().toLowerCase()));
-          const billed = sum(invs, i=>+i.total||0);
-          const received = sum(invs, paidOf);
-          const due = billed - received;
-          return `<button class="row" data-act="openClient" data-id="${c.id}"><div class="av n">${esc(initials(c.name))}</div><div class="main"><div class="t">${esc(c.name)}</div><div class="s">${esc([c.phone, c.gstin&&("GSTIN "+c.gstin), c.state].filter(Boolean).join(" · ")||"—")}</div></div><div class="amt"><b>${inr(Math.max(0,due))}</b><span class="small muted">${due>0?"due":"clear"} · ${invs.length} inv</span></div></button>`;
-        }).join("")}</div>`;
   }
+  return h;
+}
+
+/* CLIENTS */
+function vClients(){
+  const list = S.clients.filter(c=>match("cli", c.name, c.phone, c.gstin, c.address)).sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+  const totalDue = sum(S.clients, c => {
+    const invs = S.invoices.filter(i=>(i.client?.id===c.id) || (i.client?.name && i.client.name.trim().toLowerCase()===(c.name||"").trim().toLowerCase()));
+    return Math.max(0, sum(invs, i=>+i.total||0) - sum(invs, paidOf));
+  });
+  let h = `<h2 class="vt">Clients</h2>`;
+  h += `<div class="bar">${searchBar("cli","Search client name, phone or GSTIN")}<button class="btn sm" data-act="exportClients">${svg("dl")}CSV</button><button class="btn pri sm" data-act="newClient">+ Client</button></div>`;
+  if(S.clients.length) h += `<p class="small muted" style="margin:0 0 8px">Total outstanding from clients: <b class="num" style="color:var(--ink)">${inr(totalDue)}</b> · ${S.clients.length} client${S.clients.length===1?"":"s"}</p>`;
+  h += !S.clients.length ? emptyBox("No clients yet","Add clients to track their invoices, quotations, and outstanding payments.","newClient","Add client")
+    : !list.length ? `<p class="muted">No client matches “${esc(S.q.cli)}”.</p>`
+    : `<div class="list">${list.map(c=>{
+        const invs = S.invoices.filter(i=>(i.client?.id===c.id) || (i.client?.name && i.client.name.trim().toLowerCase()===(c.name||"").trim().toLowerCase()));
+        const billed = sum(invs, i=>+i.total||0);
+        const received = sum(invs, paidOf);
+        const due = billed - received;
+        return `<button class="row" data-act="openClient" data-id="${c.id}"><div class="av n">${esc(initials(c.name))}</div><div class="main"><div class="t">${esc(c.name)}</div><div class="s">${esc([c.phone, c.gstin&&("GSTIN "+c.gstin), c.state].filter(Boolean).join(" · ")||"—")}</div></div><div class="amt"><b>${inr(Math.max(0,due))}</b><span class="small muted">${due>0?"due":"clear"} · ${invs.length} inv</span></div></button>`;
+      }).join("")}</div>`;
   return h;
 }
 
@@ -601,20 +627,16 @@ function clientNames(){
 function itemRow(it={}, gst, prev){
   const p = it.pricing || (it.desc && !it.material && it.rate!==undefined && !it.l ? "unit" : (prev?.pricing || "sqft"));
   const du = it.du || prev?.du || S.settings.dimUnit || "in";
-  const stockNames = S.materials.map(m=>m.name).filter(n=>n && !MATS.includes(n));
   const mat = it.material ?? prev?.material ?? "";
   const thick = it.thick ?? prev?.thick ?? "";
   
-  const allConfigured = getAllConfiguredMaterials();
-  const customMats = allConfigured.filter(m => !MATS.includes(m) && !stockNames.includes(m));
-  const extra = mat && !MATS.includes(mat) && !stockNames.includes(mat) && !customMats.includes(mat) ? `<option selected>${esc(mat)}</option>` : "";
+  const docMats = getDocMaterialsList();
+  const extra = mat && !docMats.includes(mat) ? `<option selected>${esc(mat)}</option>` : "";
   const matOpts = `<option value="">Material…</option>`
-    + `${MATS.map(m=>`<option ${m===mat?"selected":""}>${esc(m)}</option>`).join("")}`
-    + `${customMats.length?`<optgroup label="Custom Materials">${customMats.map(n=>`<option ${n===mat?"selected":""}>${esc(n)}</option>`).join("")}</optgroup>`:""}`
-    + `${stockNames.length?`<optgroup label="From stock">${stockNames.map(n=>`<option ${n===mat?"selected":""}>${esc(n)}</option>`).join("")}</optgroup>`:""}`
-    + `${extra}`;
+    + docMats.map(m => `<option value="${esc(m)}" ${m===mat?"selected":""}>${esc(m)}</option>`).join("")
+    + extra;
 
-  const thList = mat ? getMaterialThicknesses(mat) : [];
+  const thList = (mat && mat !== "Other") ? getMaterialThicknesses(mat) : [];
   const thChipsHtml = thList.map(t => {
     const isActive = thick !== "" && parseFloat(thick) === parseFloat(t.thick);
     return `<button type="button" class="th-chip ${isActive?'active':''}" data-act="pickThick" data-thick="${esc(t.thick)}" data-rate="${esc(t.rate)}">${esc(t.thick)}mm <span class="rate-badge">₹${esc(t.rate)}</span></button>`;
@@ -2034,6 +2056,7 @@ async function saveText(filename, text){
 }
 const EXPORTS = {
   exportInvoices: ()=> saveText(`invoices_${today()}.csv`, csv([["Invoice no","Date","Client","Client GSTIN","Type","Total sq.ft","Taxable","Tax","Total","Received","Balance","Status","Due date"], ...[...S.invoices].sort((a,b)=>(a.date||"").localeCompare(b.date||"")).map(i=>[i.no,i.date,i.client?.name,i.client?.gstin,i.gstMode==="gst"?"GST":"Simple",calc(i).area,i.sub,i.tax,i.total,paidOf(i),r2(i.total-paidOf(i)),invStatus(i),i.dueDate])])),
+  exportClients: ()=> saveText(`clients_${today()}.csv`, csv([["Client name","Phone","Email","GSTIN","PAN","State","Address","Total Billed","Total Received","Balance Due"], ...[...S.clients].sort((a,b)=>(a.name||"").localeCompare(b.name||"")).map(c=>{ const invs=S.invoices.filter(i=>(i.client?.id===c.id)||(i.client?.name&&i.client.name.trim().toLowerCase()===(c.name||"").trim().toLowerCase())); const billed=sum(invs,i=>+i.total||0); const received=sum(invs,paidOf); const due=Math.max(0,billed-received); return [c.name,c.phone,c.email,c.gstin,c.pan,c.state,c.address,billed,received,due]; })])),
   exportLedger: ()=> { const L=ledger().filter(x=>x.date?.startsWith(S.month)); return saveText(`income-expense_${S.month}.csv`, csv([["Date","Type","Amount","Category","Party","Mode","Note"], ...L.map(x=>[x.date,x.type,x.amount,x.cat,x.party,x.mode,x.note])])); },
   exportStock: ()=> saveText(`stock_${today()}.csv`, csv([["Material","Type","Thickness mm","Unit","HSN","Current stock","Min stock","Purchase rate","Selling rate","Value"], ...S.materials.map(m=>[m.name,m.category,m.thick,m.unit,m.hsn,stockOf(m),m.minStock,m.rate,m.saleRate,r2(Math.max(0,stockOf(m))*(+m.rate||0))])])),
   exportBills: ()=> saveText(`vendor-bills_${today()}.csv`, csv([["Bill no","Date","Vendor","Amount","GST","Paid","Balance","Status","Pay by","Note"], ...S.bills.map(b=>[b.billNo,b.date,vendorName(b.vendorId),b.amount,b.tax,paidOf(b),r2(b.amount-paidOf(b)),billStatus(b),b.dueDate,b.note])])),
