@@ -613,99 +613,532 @@ async function savePay(form){
 }
 
 /* ---------- PDF ---------- */
-async function loadImg(id){
-  const r = await fetch(fileUrl(id)); const blob = await r.blob();
-  const data = await new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsDataURL(blob); });
-  const dim = await new Promise((res)=>{ const im=new Image(); im.onload=()=>res({w:im.naturalWidth,h:im.naturalHeight}); im.onerror=()=>res({w:1,h:1}); im.src=data; });
-  let fmt = /png/.test(blob.type)?"PNG":"JPEG";
-  if(/webp|svg/.test(blob.type)){ // convert to PNG for jsPDF
-    const c=document.createElement("canvas"); c.width=dim.w; c.height=dim.h; const im=new Image(); im.src=data; await im.decode(); c.getContext("2d").drawImage(im,0,0); return {data:c.toDataURL("image/png"), fmt:"PNG", ...dim};
+async function loadImg(idOrUrl){
+  if(!idOrUrl) return null;
+  try{
+    const url = (idOrUrl.startsWith("/") || idOrUrl.startsWith("http") || idOrUrl.startsWith("data:")) ? idOrUrl : fileUrl(idOrUrl);
+    const r = await fetch(url);
+    if(!r.ok) return null;
+    const blob = await r.blob();
+    const data = await new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsDataURL(blob); });
+    const dim = await new Promise((res)=>{ const im=new Image(); im.onload=()=>res({w:im.naturalWidth,h:im.naturalHeight}); im.onerror=()=>res({w:1,h:1}); im.src=data; });
+    let fmt = /png/.test(blob.type)?"PNG":"JPEG";
+    if(/webp|svg/.test(blob.type)){ // convert to PNG for jsPDF
+      const c=document.createElement("canvas"); c.width=dim.w; c.height=dim.h; const im=new Image(); im.src=data; await im.decode(); c.getContext("2d").drawImage(im,0,0); return {data:c.toDataURL("image/png"), fmt:"PNG", ...dim};
+    }
+    return {data, fmt, ...dim};
+  }catch(e){
+    console.warn("loadImg failed:", idOrUrl, e);
+    return null;
   }
-  return {data, fmt, ...dim};
 }
+
 async function makePDF(d, kind){
   if(!window.jspdf){ toast("PDF tool did not load. Check internet and reopen."); return; }
-  const { jsPDF } = window.jspdf; const doc = new jsPDF({unit:"mm", format:"a4"});
-  const W=210, H=297, M=14; const st=S.settings; const c=calc(d); const gst=d.gstMode==="gst"; const isQ=kind==="quote";
-  const ACC=[11,107,93], INK=[22,30,28], MUT=[105,115,112], LINE=[205,214,211];
-  doc.setTextColor(...INK); doc.setDrawColor(...LINE);
-  let y=M, x0=M;
-  if(st.logoId){ try{ const im=await loadImg(st.logoId); const hh=18, ww=Math.min(36, hh*im.w/im.h); doc.addImage(im.data, im.fmt, M, y, ww, hh); x0=M+ww+4; }catch(e){ console.warn(e); } }
-  doc.setFont("helvetica","bold"); doc.setFontSize(15); doc.text(doc.splitTextToSize(st.name||"Your Company",100)[0], x0, y+5); // company name
-  doc.setFont("helvetica","normal"); doc.setFontSize(8.5); doc.setTextColor(...MUT);
-  let ly=y+10; const addr=doc.splitTextToSize(st.address||"", 100); if(addr.length){ doc.text(addr, x0, ly); ly+=addr.length*3.7; }
-  const l2=[st.phone&&("Ph: "+st.phone), st.email].filter(Boolean).join("   |   "); if(l2){ doc.text(l2,x0,ly); ly+=3.7; }
-  if(st.gstin){ doc.setTextColor(...INK); doc.setFont("helvetica","bold"); doc.text("GSTIN: "+st.gstin+(st.state?"     State: "+st.state:""), x0, ly); doc.setFont("helvetica","normal"); ly+=3.7; }
-  const title = isQ ? "QUOTATION" : (gst ? "TAX INVOICE" : "INVOICE");
-  doc.setFont("helvetica","bold"); doc.setFontSize(17); doc.setTextColor(...ACC); doc.text(title, W-M, y+6, {align:"right"});
-  doc.setFontSize(9); doc.setTextColor(...INK);
-  const meta=[[isQ?"Quotation No.":"Invoice No.", d.no],["Date", fmtDate(d.date)], isQ?["Valid till", d.validTill?fmtDate(d.validTill):""]:["Due date", d.dueDate?fmtDate(d.dueDate):""]].filter(r=>r[1]);
-  let my=y+13; meta.forEach(([k,v])=>{ doc.setFont("helvetica","normal"); doc.setTextColor(...MUT); doc.text(k, W-M-58, my); doc.setTextColor(...INK); doc.setFont("helvetica","bold"); doc.text(String(v), W-M, my, {align:"right"}); my+=4.8; });
-  y = Math.max(ly, my, y+20) + 2; doc.setLineWidth(0.4); doc.setDrawColor(...ACC); doc.line(M,y,W-M,y); doc.setDrawColor(...LINE); doc.setLineWidth(0.2); y+=6;
-  // bill to
-  const cl=d.client||{};
-  doc.setFont("helvetica","bold"); doc.setFontSize(7.5); doc.setTextColor(...MUT); doc.text(isQ?"QUOTATION FOR":"BILL TO", M, y); y+=4.5;
-  doc.setTextColor(...INK); doc.setFontSize(10.5); doc.text(cl.name||"-", M, y); y+=4.6; doc.setFont("helvetica","normal"); doc.setFontSize(8.5);
-  const ca=doc.splitTextToSize(cl.address||"",110); if(ca.length){ doc.text(ca,M,y); y+=ca.length*3.7; }
-  const cl2=[cl.phone&&("Ph: "+cl.phone), gst&&cl.gstin&&("GSTIN: "+cl.gstin)].filter(Boolean).join("   |   "); if(cl2){ doc.text(cl2,M,y); y+=3.7; }
-  if(gst && cl.state){ doc.text("Place of supply: "+cl.state, M, y); y+=3.7; }
-  y+=4;
-  // table
-  const cols = gst
-    ? [["#",7,"l"],["Description",0,"l"],["HSN/SAC",15,"l"],["Size (LxW)",27,"l"],["Pcs/Qty",15,"r"],["Sq.ft",14,"r"],["Rate",18,"r"],["GST",10,"r"],["Amount",23,"r"]]
-    : [["#",7,"l"],["Description",0,"l"],["Size (LxW)",30,"l"],["Pcs/Qty",17,"r"],["Sq.ft",16,"r"],["Rate",22,"r"],["Amount",27,"r"]];
-  const fixed = cols.reduce((a,c)=>a+c[1],0); cols[1][1] = (W-2*M) - fixed;
-  const xs=[]; let cx=M; cols.forEach(c=>{ xs.push(cx); cx+=c[1]; });
-  const cellX = i => cols[i][2]==="r" ? xs[i]+cols[i][1]-1.5 : xs[i]+1.5;
-  const head = () => { doc.setFillColor(...ACC); doc.rect(M,y,W-2*M,7,"F"); doc.setTextColor(255,255,255); doc.setFont("helvetica","bold"); doc.setFontSize(7.6); cols.forEach((c,i)=>doc.text(c[0], cellX(i), y+4.7, {align:c[2]==="r"?"right":"left"})); y+=7; doc.setTextColor(...INK); doc.setFont("helvetica","normal"); doc.setFontSize(8.3); };
-  head();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:"mm", format:"a4"});
+  const W=210, H=297, M=13;
+  const contentWidth = W - 2*M; // 184 mm
+  const st = S.settings || {};
+  const c = calc(d);
+  const gst = d.gstMode==="gst";
+  const isQ = kind==="quote";
+  const cl = d.client || {};
+
+  const ORANGE = [232, 128, 42];     // #E8802A brand orange stripe
+  const INK = [20, 20, 20];          // Dark text
+  const BORDER = [35, 35, 35];       // Clean table borders
+  const MUT = [90, 90, 90];          // Muted labels
+  const TH_BG = [238, 238, 238];     // Shaded table header
+  const GRAND_BG = [247, 222, 199];  // Soft peach/beige grand total highlight
+
   const pdfSafe = t => String(t||"").replace(/[×]/g,"x").replace(/[–—]/g,"-").replace(/[^\x20-\x7E\n]/g,"");
-  c.rows.forEach((r,idx)=>{
-    const sq = r.pricing==="sqft";
-    const lines = doc.splitTextToSize(pdfSafe(itemTitle(r)) || "-", cols[1][1]-3); const rh = Math.max(6.5, lines.length*3.7+2.8);
-    if(y+rh > H-30){ doc.addPage(); y=M; head(); }
-    if(idx%2===1){ doc.setFillColor(244,247,246); doc.rect(M,y,W-2*M,rh,"F"); }
-    const size = sq ? pdfSafe(itemSize(r)) : "";
-    const qty = sq ? String(r.qty) : `${r.qty} ${r.unit||""}`.trim();
-    const sqft = sq ? r.sqft.toFixed(2) : "";
-    const vals = gst ? [String(idx+1), lines, r.hsn||"", size, qty, sqft, pdfAmt(r.rate), (r.gst||0)+"%", pdfAmt(r.amt)]
-                     : [String(idx+1), lines, size, qty, sqft, pdfAmt(r.rate), pdfAmt(r.amt)];
-    vals.forEach((v,i)=>doc.text(v, cellX(i), y+4.4, {align:cols[i][2]==="r"?"right":"left"}));
-    y+=rh; doc.line(M,y,W-M,y);
-  });
-  if(c.area){ doc.setFontSize(8); doc.setTextColor(...MUT); doc.text(`Total area: ${c.area.toFixed(2)} sq.ft   (Rate column is per sq.ft for sized items)`, M, y+4); doc.setTextColor(...INK); y+=3; }
-  y+=4;
-  // totals
-  const tl = [["Subtotal", pdfAmt(c.sub)]];
-  if(gst){ if(d.inter) tl.push(["IGST", pdfAmt(c.igst)]); else { tl.push(["CGST", pdfAmt(c.cgst)]); tl.push(["SGST", pdfAmt(c.sgst)]); } }
-  if(c.roundOff) tl.push(["Round off", (c.roundOff>0?"+":"")+c.roundOff.toFixed(2)]);
-  const need = tl.length*5.2 + 40; if(y+need > H-12){ doc.addPage(); y=M; }
-  const ty0=y; const tx=W-M-70;
-  tl.forEach(([k,v])=>{ doc.setTextColor(...MUT); doc.text(k, tx, y+3.5); doc.setTextColor(...INK); doc.text(v, W-M-1.5, y+3.5, {align:"right"}); y+=5.2; });
-  doc.setFillColor(...ACC); doc.rect(tx-2, y, W-M-tx+2, 8, "F"); doc.setTextColor(255,255,255); doc.setFont("helvetica","bold"); doc.setFontSize(10.5);
-  doc.text("TOTAL", tx, y+5.4); doc.text("Rs. "+pdfAmt(c.total), W-M-1.5, y+5.4, {align:"right"}); y+=12;
-  doc.setTextColor(...INK); doc.setFont("helvetica","normal"); doc.setFontSize(8.5);
-  // left column: words, bank, terms
-  let lyy=ty0; const lw = tx-M-8;
-  doc.setFont("helvetica","bold"); doc.setFontSize(7.5); doc.setTextColor(...MUT); doc.text("AMOUNT IN WORDS", M, lyy+3); lyy+=7;
-  doc.setFont("helvetica","normal"); doc.setFontSize(8.5); doc.setTextColor(...INK); const w=doc.splitTextToSize("Rupees "+inWords(c.total)+" Only", lw); doc.text(w,M,lyy); lyy+=w.length*3.8+3;
-  if(!isQ && (st.bankName||st.accNo||st.upi)){
-    doc.setFont("helvetica","bold"); doc.setFontSize(7.5); doc.setTextColor(...MUT); doc.text("BANK DETAILS", M, lyy); lyy+=4.2; doc.setFont("helvetica","normal"); doc.setFontSize(8.5); doc.setTextColor(...INK);
-    [st.accName&&("A/c name: "+st.accName), st.bankName&&("Bank: "+st.bankName), st.accNo&&("A/c no.: "+st.accNo), st.ifsc&&("IFSC: "+st.ifsc), st.upi&&("UPI: "+st.upi)].filter(Boolean).forEach(t=>{ doc.text(t,M,lyy); lyy+=3.9; }); lyy+=2;
+
+  let y = 10;
+
+  // 1. Logo (top left)
+  let logo = null;
+  if(st.logoId) {
+    logo = await loadImg(st.logoId);
   }
-  y = Math.max(y, lyy);
-  const notes = [d.notes, st.terms].filter(Boolean).join("\n");
-  if(notes){ const nl=doc.splitTextToSize(notes, W-2*M-60); if(y+nl.length*3.8+10 > H-30){ doc.addPage(); y=M; }
-    doc.setFont("helvetica","bold"); doc.setFontSize(7.5); doc.setTextColor(...MUT); doc.text(isQ?"NOTES & TERMS":"TERMS & CONDITIONS", M, y); y+=4.2; doc.setFont("helvetica","normal"); doc.setFontSize(8.2); doc.setTextColor(...INK); doc.text(nl,M,y); y+=nl.length*3.8; }
-  // signature
-  let sy=Math.max(y+8, H-36); if(sy>H-18){ doc.addPage(); sy=H-36; }
-  doc.setFont("helvetica","bold"); doc.setFontSize(8.5); doc.text("For "+(st.name||"Company"), W-M, sy, {align:"right"});
-  doc.setDrawColor(...LINE); doc.line(W-M-55, sy+16, W-M, sy+16); doc.setFont("helvetica","normal"); doc.setTextColor(...MUT); doc.text("Authorised Signatory", W-M, sy+20, {align:"right"});
-  const pages=doc.getNumberOfPages(); for(let i=1;i<=pages;i++){ doc.setPage(i); doc.setFontSize(7); doc.setTextColor(...MUT); doc.text(isQ?"This is a quotation, not a bill.":"This is a computer generated invoice.", M, H-7); if(pages>1) doc.text(`Page ${i} of ${pages}`, W-M, H-7, {align:"right"}); }
-  const fname = `${(isQ?"Quotation":"Invoice")}_${(d.no||"").replace(/[^\w-]+/g,"-")}_${(cl.name||"").replace(/[^\w]+/g,"-").slice(0,30)}.pdf`.replace(/-+/g,"-");
+  if(!logo) {
+    logo = await loadImg("/icons/the_wooden_art_logo.png");
+  }
+
+  if(logo && logo.w && logo.h) {
+    const maxH = 18;
+    const maxW = 55;
+    const ratio = logo.w / logo.h;
+    let lh = maxH;
+    let lw = lh * ratio;
+    if(lw > maxW) {
+      lw = maxW;
+      lh = lw / ratio;
+    }
+    doc.addImage(logo.data, logo.fmt, M, y + (maxH - lh)/2, lw, lh);
+  } else {
+    doc.setFont("helvetica","bold"); doc.setFontSize(15); doc.setTextColor(...INK);
+    doc.text((st.name || "THE WOODEN ART").toUpperCase(), M, y + 8);
+    doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(...MUT);
+    doc.text("Interior & Exterior Hub", M, y + 13);
+  }
+
+  // 2. Full-width Orange Bar below logo
+  y = 31;
+  doc.setFillColor(...ORANGE);
+  doc.rect(M, y, contentWidth, 3.8, "F");
+  y += 6.5;
+
+  // 3. Document Title Box (INVOICE / QUOTATION)
+  doc.setDrawColor(...BORDER);
+  doc.setLineWidth(0.35);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(M, y, contentWidth, 8, "S");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(...INK);
+  const docTitle = isQ ? "QUOTATION" : (gst ? "TAX INVOICE" : "INVOICE");
+  doc.text(docTitle, W / 2, y + 5.6, { align: "center" });
+  y += 9.5;
+
+  // 4. Customer & Order Info Grid
+  const cw1 = 92;
+  const cw2 = contentWidth - cw1; // 92
+  const r1h = 6.8;
+  const r2h = 6.8;
+  doc.setFontSize(8.5);
+  const addrText = cl.address ? pdfSafe(cl.address) : "—";
+  const addrLines = doc.splitTextToSize(addrText, contentWidth - 26);
+  const r3h = Math.max(6.8, addrLines.length * 3.8 + 2.8);
+  const custTableH = r1h + r2h + r3h;
+
+  doc.setDrawColor(...BORDER);
+  doc.setLineWidth(0.3);
+  doc.rect(M, y, contentWidth, custTableH, "S");
+  doc.line(M, y + r1h, M + contentWidth, y + r1h);
+  doc.line(M, y + r1h + r2h, M + contentWidth, y + r1h + r2h);
+  doc.line(M + cw1, y, M + cw1, y + r1h + r2h);
+
+  // Row 1
+  doc.setFont("helvetica", "bold"); doc.setTextColor(...INK);
+  doc.text("Customer:", M + 2.5, y + 4.6);
+  doc.setFont("helvetica", "normal");
+  doc.text(doc.splitTextToSize(pdfSafe(cl.name || "—"), cw1 - 24)[0], M + 22, y + 4.6);
+
+  doc.setFont("helvetica", "bold");
+  doc.text(isQ ? "Quotation No:" : "Order No:", M + cw1 + 2.5, y + 4.6);
+  doc.setFont("helvetica", "normal");
+  doc.text(String(d.no || "—"), M + cw1 + 26, y + 4.6);
+
+  // Row 2
+  doc.setFont("helvetica", "bold");
+  doc.text("Mobile No:", M + 2.5, y + r1h + 4.6);
+  doc.setFont("helvetica", "normal");
+  doc.text(cl.phone ? String(cl.phone) : "—", M + 22, y + r1h + 4.6);
+
+  doc.setFont("helvetica", "bold");
+  doc.text("Date:", M + cw1 + 2.5, y + r1h + 4.6);
+  doc.setFont("helvetica", "normal");
+  doc.text(fmtDate(d.date), M + cw1 + 26, y + r1h + 4.6);
+
+  // Row 3 (Address)
+  doc.setFont("helvetica", "bold");
+  doc.text("Address:", M + 2.5, y + r1h + r2h + 4.6);
+  doc.setFont("helvetica", "normal");
+  doc.text(addrLines, M + 22, y + r1h + r2h + 4.6);
+
+  y += custTableH + 5;
+
+  // 5. Line Items Table
+  // Columns: SN. NO (14), Description (72), Sq/Ft (18), Rate (20), Amount (22), Qty (16), Total (22)
+  const cols = [
+    { title: "SN.\nNO", w: 14, align: "center" },
+    { title: "Description", w: 72, align: "left" },
+    { title: "Sq/Ft", w: 18, align: "right" },
+    { title: "Rate", w: 20, align: "right" },
+    { title: "Amount", w: 22, align: "right" },
+    { title: "Qty", w: 16, align: "center" },
+    { title: "Total", w: 22, align: "right" }
+  ];
+
+  let xs = [];
+  let curX = M;
+  cols.forEach(col => { xs.push(curX); curX += col.w; });
+
+  const drawTableHeader = () => {
+    doc.setDrawColor(...BORDER);
+    doc.setLineWidth(0.3);
+    doc.setFillColor(...TH_BG);
+    doc.rect(M, y, contentWidth, 8, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(...INK);
+
+    cols.forEach((col, idx) => {
+      const cx = xs[idx];
+      if(idx > 0) doc.line(cx, y, cx, y + 8);
+      if(col.align === "center") {
+        const lines = col.title.split("\n");
+        if(lines.length > 1) {
+          doc.text(lines[0], cx + col.w / 2, y + 3.2, { align: "center" });
+          doc.text(lines[1], cx + col.w / 2, y + 6.6, { align: "center" });
+        } else {
+          doc.text(col.title, cx + col.w / 2, y + 5.2, { align: "center" });
+        }
+      } else if(col.align === "right") {
+        doc.text(col.title, cx + col.w - 2.5, y + 5.2, { align: "right" });
+      } else {
+        doc.text(col.title, cx + 2.5, y + 5.2, { align: "left" });
+      }
+    });
+    y += 8;
+  };
+
+  drawTableHeader();
+
+  // Print Rows
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+
+  c.rows.forEach((r, idx) => {
+    const isSqft = r.pricing === "sqft";
+    const title = pdfSafe(itemTitle(r));
+    const descLines = doc.splitTextToSize(title, cols[1].w - 4);
+    const rh = Math.max(6.8, descLines.length * 3.8 + 2.8);
+
+    if(y + rh > H - 25) {
+      doc.addPage();
+      y = M;
+      drawTableHeader();
+    }
+
+    doc.setDrawColor(...BORDER);
+    doc.setLineWidth(0.2);
+    // Draw cells
+    cols.forEach((col, cIdx) => {
+      doc.rect(xs[cIdx], y, col.w, rh, "S");
+    });
+
+    // Values
+    const snText = String(idx + 1);
+
+    const pieceSqft = isSqft ? r2((+r.l || 0) * (+r.w || 0) * ((DIMS[r.du] || DIMS.in).f)) : 0;
+    const sqftText = (isSqft && pieceSqft > 0) ? pieceSqft.toFixed(2) : (isSqft && r.sqft ? (r.sqft / (r.qty || 1)).toFixed(2) : "—");
+
+    const rateText = pdfAmt(r.rate);
+    const pieceAmt = (isSqft && pieceSqft > 0) ? r2(pieceSqft * (+r.rate || 0)) : (+r.rate || 0);
+    const amtText = pdfAmt(pieceAmt);
+    const qtyText = String(r.qty || 1);
+    const totText = pdfAmt(r.amt);
+
+    const vals = [snText, descLines, sqftText, rateText, amtText, qtyText, totText];
+
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...INK);
+
+    vals.forEach((v, cIdx) => {
+      const col = cols[cIdx];
+      const cx = xs[cIdx];
+      if(col.align === "center") {
+        doc.text(v, cx + col.w / 2, y + 4.5, { align: "center" });
+      } else if(col.align === "right") {
+        doc.text(v, cx + col.w - 2.5, y + 4.5, { align: "right" });
+      } else {
+        doc.text(v, cx + 2.5, y + 4.5, { align: "left" });
+      }
+    });
+
+    y += rh;
+  });
+
+  y += 5;
+
+  // 6. Payment Details & Amount Summary Section
+  let qrImg = null;
+  if(st.qrId) {
+    qrImg = await loadImg(st.qrId);
+  }
+
+  let totalJobQty = c.rows.reduce((sum, r) => sum + (+r.qty || 1), 0);
+  const summaryRows = [
+    ["Total Job Qty", String(totalJobQty)],
+    ["Sub Total", pdfAmt(c.sub)]
+  ];
+  if(gst) {
+    if(d.inter) {
+      summaryRows.push(["IGST", pdfAmt(c.igst)]);
+    } else {
+      summaryRows.push(["CGST", pdfAmt(c.cgst)]);
+      summaryRows.push(["SGST", pdfAmt(c.sgst)]);
+    }
+  }
+  if(c.roundOff) {
+    summaryRows.push(["Round Off", (c.roundOff > 0 ? "+" : "") + c.roundOff.toFixed(2)]);
+  }
+
+  const paymentRows = [
+    ["Account Number:", st.accNo || "—"],
+    ["Bank Name:", st.bankName || "—"],
+    ["Account Type:", st.accType || "Savings"],
+    ["Account Holder:", st.accName || "—"],
+    ["IFSC Code:", st.ifsc || "—"]
+  ];
+  if(!qrImg && st.upi) {
+    paymentRows.push(["UPI ID:", st.upi]);
+  }
+
+  const numPaymentRows = paymentRows.length;
+  const numSummaryRows = summaryRows.length + 1; // +1 for Grand Total
+  const maxRows = Math.max(numPaymentRows, numSummaryRows);
+  const rowHeight = 5.6;
+  const boxHeaderH = 6.5;
+  const totalBoxH = boxHeaderH + maxRows * rowHeight;
+
+  if(y + totalBoxH + 45 > H - 15) {
+    doc.addPage();
+    y = M;
+  }
+
+  const startY = y;
+
+  if(qrImg && qrImg.w && qrImg.h) {
+    // 3 columns: Bank Details (82mm), QR Box (34mm), Summary (64mm)
+    const wBank = 82;
+    const wQr = 34;
+    const wSum = 64;
+    const xBank = M;
+    const xQr = M + wBank + 2;
+    const xSum = xQr + wQr + 2;
+
+    // A. Bank Details Box
+    doc.setDrawColor(...BORDER);
+    doc.setLineWidth(0.3);
+    doc.setFillColor(...TH_BG);
+    doc.rect(xBank, startY, wBank, boxHeaderH, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...INK);
+    doc.text("Payment Details", xBank + wBank / 2, startY + 4.5, { align: "center" });
+
+    let py = startY + boxHeaderH;
+    paymentRows.forEach(([k, v]) => {
+      doc.rect(xBank, py, wBank, rowHeight, "S");
+      doc.line(xBank + 32, py, xBank + 32, py + rowHeight);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.text(k, xBank + 2, py + 3.9);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.text(doc.splitTextToSize(v, wBank - 34)[0], xBank + 34, py + 3.9);
+      py += rowHeight;
+    });
+    for(let i = paymentRows.length; i < maxRows; i++) {
+      doc.rect(xBank, py, wBank, rowHeight, "S");
+      py += rowHeight;
+    }
+
+    // B. QR Box
+    doc.rect(xQr, startY, wQr, totalBoxH, "S");
+    doc.setFillColor(...TH_BG);
+    doc.rect(xQr, startY, wQr, boxHeaderH, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text("Scan to Pay", xQr + wQr / 2, startY + 4.5, { align: "center" });
+
+    const qrSize = Math.min(wQr - 6, totalBoxH - boxHeaderH - 8, 25);
+    const qrX = xQr + (wQr - qrSize) / 2;
+    const qrY = startY + boxHeaderH + 1.5;
+    doc.addImage(qrImg.data, qrImg.fmt, qrX, qrY, qrSize, qrSize);
+
+    if(st.upi) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(6.2);
+      doc.setTextColor(...INK);
+      doc.text(doc.splitTextToSize(st.upi, wQr - 2)[0], xQr + wQr / 2, qrY + qrSize + 3.5, { align: "center" });
+    }
+
+    // C. Amount Summary Box
+    doc.setFillColor(...TH_BG);
+    doc.rect(xSum, startY, wSum, boxHeaderH, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.text("Amount Summary", xSum + wSum / 2, startY + 4.5, { align: "center" });
+
+    let sy = startY + boxHeaderH;
+    const wSumLabel = 36;
+    summaryRows.forEach(([k, v]) => {
+      doc.rect(xSum, sy, wSum, rowHeight, "S");
+      doc.line(xSum + wSumLabel, sy, xSum + wSumLabel, sy + rowHeight);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.8);
+      doc.text(k, xSum + 2, sy + 3.9);
+      doc.setFont("helvetica", "normal");
+      doc.text(v, xSum + wSum - 2.5, sy + 3.9, { align: "right" });
+      sy += rowHeight;
+    });
+
+    // Grand Total Row (with peach/beige highlight!)
+    doc.setFillColor(...GRAND_BG);
+    doc.rect(xSum, sy, wSum, rowHeight, "FD");
+    doc.line(xSum + wSumLabel, sy, xSum + wSumLabel, sy + rowHeight);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.2);
+    doc.text("Grand Total", xSum + 2, sy + 3.9);
+    doc.text(pdfAmt(c.total), xSum + wSum - 2.5, sy + 3.9, { align: "right" });
+    sy += rowHeight;
+
+    for(let i = summaryRows.length + 1; i < maxRows; i++) {
+      doc.rect(xSum, sy, wSum, rowHeight, "S");
+      sy += rowHeight;
+    }
+
+  } else {
+    // 2 columns: Bank Details (104mm), Summary (78mm)
+    const wBank = 104;
+    const wSum = 78;
+    const xBank = M;
+    const xSum = M + wBank + 2;
+
+    // Bank Details
+    doc.setDrawColor(...BORDER);
+    doc.setLineWidth(0.3);
+    doc.setFillColor(...TH_BG);
+    doc.rect(xBank, startY, wBank, boxHeaderH, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...INK);
+    doc.text("Payment Details", xBank + wBank / 2, startY + 4.5, { align: "center" });
+
+    let py = startY + boxHeaderH;
+    paymentRows.forEach(([k, v]) => {
+      doc.rect(xBank, py, wBank, rowHeight, "S");
+      doc.line(xBank + 36, py, xBank + 36, py + rowHeight);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.8);
+      doc.text(k, xBank + 2.5, py + 3.9);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.8);
+      doc.text(doc.splitTextToSize(v, wBank - 38)[0], xBank + 38, py + 3.9);
+      py += rowHeight;
+    });
+    for(let i = paymentRows.length; i < maxRows; i++) {
+      doc.rect(xBank, py, wBank, rowHeight, "S");
+      py += rowHeight;
+    }
+
+    // Amount Summary
+    doc.setFillColor(...TH_BG);
+    doc.rect(xSum, startY, wSum, boxHeaderH, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.text("Amount Summary", xSum + wSum / 2, startY + 4.5, { align: "center" });
+
+    let sy = startY + boxHeaderH;
+    const wSumLabel = 44;
+    summaryRows.forEach(([k, v]) => {
+      doc.rect(xSum, sy, wSum, rowHeight, "S");
+      doc.line(xSum + wSumLabel, sy, xSum + wSumLabel, sy + rowHeight);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.8);
+      doc.text(k, xSum + 2.5, sy + 3.9);
+      doc.setFont("helvetica", "normal");
+      doc.text(v, xSum + wSum - 2.5, sy + 3.9, { align: "right" });
+      sy += rowHeight;
+    });
+
+    // Grand Total Row
+    doc.setFillColor(...GRAND_BG);
+    doc.rect(xSum, sy, wSum, rowHeight, "FD");
+    doc.line(xSum + wSumLabel, sy, xSum + wSumLabel, sy + rowHeight);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.2);
+    doc.text("Grand Total", xSum + 2.5, sy + 3.9);
+    doc.text(pdfAmt(c.total), xSum + wSum - 2.5, sy + 3.9, { align: "right" });
+    sy += rowHeight;
+
+    for(let i = summaryRows.length + 1; i < maxRows; i++) {
+      doc.rect(xSum, sy, wSum, rowHeight, "S");
+      sy += rowHeight;
+    }
+  }
+
+  y = startY + totalBoxH + 5;
+
+  // 7. Payment terms and info & instructions
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.2);
+  doc.setTextColor(...INK);
+  doc.text("Payment terms and info & instructions", M, y);
+  y += 4.2;
+
+  const defaultBullets = [
+    "100% payment is required before delivery. Delivery will be scheduled after payment confirmation.",
+    "Goods once delivered will not be returned or exchanged, except in case of manufacturing defects.",
+    "Please verify all order details before payment."
+  ];
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.2);
+  doc.setTextColor(40, 40, 40);
+
+  defaultBullets.forEach(b => {
+    doc.text("•  " + b, M + 1, y);
+    y += 3.6;
+  });
+
+  if(st.terms) {
+    const extraTerms = doc.splitTextToSize(pdfSafe(st.terms), contentWidth - 4);
+    extraTerms.forEach(t => {
+      doc.text("•  " + t, M + 1, y);
+      y += 3.6;
+    });
+  }
+
+  if(d.notes) {
+    const notesText = doc.splitTextToSize("Note: " + pdfSafe(d.notes), contentWidth - 4);
+    notesText.forEach(nt => {
+      doc.text("•  " + nt, M + 1, y);
+      y += 3.6;
+    });
+  }
+
+  // 8. Signatory & Bottom Footer
+  let sy = Math.max(y + 6, H - 32);
+  if(sy > H - 16) {
+    doc.addPage();
+    sy = H - 32;
+  }
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...INK);
+  doc.text("For " + (st.name || "THE WOODEN ART"), W - M, sy, { align: "right" });
+  doc.setDrawColor(...BORDER);
+  doc.setLineWidth(0.2);
+  doc.line(W - M - 52, sy + 13, W - M, sy + 13);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(...MUT);
+  doc.text("Authorised Signatory", W - M, sy + 17, { align: "right" });
+
+  const totalPages = doc.getNumberOfPages();
+  for(let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    doc.setFontSize(7);
+    doc.setTextColor(...MUT);
+    doc.text(isQ ? "This is a computer generated quotation." : "This is a computer generated invoice.", M, H - 6);
+    if(totalPages > 1) {
+      doc.text(`Page ${p} of ${totalPages}`, W - M, H - 6, { align: "right" });
+    }
+  }
+
+  const fname = `${(isQ ? "Quotation" : "Invoice")}_${(d.no || "").replace(/[^\w-]+/g, "-")}_${(cl.name || "").replace(/[^\w]+/g, "-").slice(0, 30)}.pdf`.replace(/-+/g, "-");
   const blob = doc.output("blob");
-  if(!S.dl){ toast("Download not available in this view."); return; }
-  try{ await S.dl.save({filename:fname, data:blob}); }catch(e){ if(e?.code!=="declined") toast("Could not save PDF."); }
+  if(!S.dl) { toast("Download not available in this view."); return; }
+  try {
+    await S.dl.save({ filename: fname, data: blob });
+  } catch(e) {
+    if(e?.code !== "declined") toast("Could not save PDF.");
+  }
 }
 
 /* ---------- txn ---------- */
@@ -874,10 +1307,28 @@ function dBill(id, refresh){
 }
 
 /* ---------- settings ---------- */
+function renderSettingsMedia(){
+  const ll = $("#logoList");
+  if(ll){
+    ll.innerHTML = S._settingsLogoId ?
+      `<div class="fthumb" data-act="viewFile" data-fid="${esc(S._settingsLogoId)}" data-ftype="image/png" data-fname="logo"><img alt="Logo" src="${esc(fileUrl(S._settingsLogoId))}"><button type="button" class="rm" data-act="rmSettingLogo" aria-label="Remove logo">×</button></div>` :
+      `<p class="small muted" style="margin:4px 0">Default logo ("The Wooden Art") will be used if none is uploaded.</p>`;
+  }
+  const ql = $("#qrList");
+  if(ql){
+    ql.innerHTML = S._settingsQrId ?
+      `<div style="display:flex;align-items:center;gap:12px"><div class="fthumb" data-act="viewFile" data-fid="${esc(S._settingsQrId)}" data-ftype="image/png" data-fname="payment_qr"><img alt="Payment QR" src="${esc(fileUrl(S._settingsQrId))}"><button type="button" class="rm" data-act="rmSettingQr" aria-label="Remove QR">×</button></div><div><span class="chip in" style="display:inline-block">QR Code Active</span><p class="small muted" style="margin:4px 0 0">Printed in payment section on all invoices & quotes</p></div></div>` :
+      `<p class="small muted" style="margin:4px 0">No QR code uploaded. Upload your UPI payment QR code (GPay/PhonePe/Paytm).</p>`;
+  }
+}
+
 function settingsForm(){
-  const s=S.settings; S.formFiles = s.logoId ? [{id:s.logoId, type:"image/png", name:"logo"}] : [];
+  const s = S.settings || {};
+  S._settingsLogoId = s.logoId || null;
+  S._settingsQrId = s.qrId || null;
   const ro = !S.canWrite || !S.isAdmin || S.offline;
   const mr = s.matRates || {};
+
   openSheet("Company settings", `<form id="setForm" data-form="set"><fieldset ${ro?"disabled":""}>
     <div class="legend-s" style="margin-top:0">Company</div>
     <div class="fg">
@@ -890,17 +1341,26 @@ function settingsForm(){
       <label class="f"><span>GSTIN</span><input name="gstin" maxlength="15" style="text-transform:uppercase" value="${esc(s.gstin||"")}" placeholder="Leave blank if not registered"></label>
       <label class="f"><span>PAN</span><input name="pan" maxlength="10" style="text-transform:uppercase" value="${esc(s.pan||"")}"></label>
     </div>
-    <div class="legend-s">Logo</div>
-    ${S.assets?`<label class="btn upl">${svg("cam")}Choose logo<input type="file" id="logoIn" accept="image/png,image/jpeg,image/webp"></label><div class="files" id="fileList">${filesThumbs(S.formFiles,true)}</div>`:`<p class="small muted">Only editors can change the logo.</p>`}
-    <div class="legend-s">Bank details (printed on invoice)</div>
+    <div class="legend-s">Company Logo</div>
+    <p class="small muted" style="margin:-4px 0 8px">Printed at the top-left of invoices and quotations.</p>
+    ${S.assets ? `<label class="btn upl">${svg("cam")}Upload company logo<input type="file" id="logoIn" accept="image/png,image/jpeg,image/webp"></label><div class="files" id="logoList" style="margin-top:8px"></div>` : `<p class="small muted">Only editors can change the logo.</p>`}
+    
+    <div class="legend-s">Online Payment & QR Code</div>
+    <p class="small muted" style="margin:-4px 0 8px">Your UPI ID and QR code are printed directly on every generated invoice & quotation.</p>
+    <div class="fg">
+      <label class="f full"><span>UPI ID (Printed on invoice & WhatsApp message)</span><input name="upi" value="${esc(s.upi||"")}" placeholder="e.g. 7490041570@okbizaxis or name@upi"></label>
+    </div>
+    ${S.assets ? `<label class="btn upl" style="margin-top:4px">${svg("cam")}Upload Payment QR Code (GPay/PhonePe/Paytm)<input type="file" id="qrIn" accept="image/png,image/jpeg,image/webp"></label><div class="files" id="qrList" style="margin-top:8px"></div>` : `<p class="small muted">Only editors can upload payment QR code.</p>`}
+
+    <div class="legend-s">Bank Details (Printed on Invoice)</div>
     <div class="fg">
       <label class="f full"><span>Account holder name</span><input name="accName" value="${esc(s.accName||"")}"></label>
       <label class="f"><span>Bank name</span><input name="bankName" value="${esc(s.bankName||"")}"></label>
+      <label class="f"><span>Account type</span><select name="accType"><option value="Savings" ${(s.accType||"Savings")==="Savings"?"selected":""}>Savings</option><option value="Current" ${s.accType==="Current"?"selected":""}>Current</option></select></label>
       <label class="f"><span>Account no.</span><input name="accNo" inputmode="numeric" value="${esc(s.accNo||"")}"></label>
       <label class="f"><span>IFSC</span><input name="ifsc" style="text-transform:uppercase" value="${esc(s.ifsc||"")}"></label>
-      <label class="f"><span>UPI ID</span><input name="upi" value="${esc(s.upi||"")}" placeholder="name@bank"></label>
     </div>
-    <div class="legend-s">Invoice defaults</div>
+    <div class="legend-s">Invoice Defaults</div>
     <div class="fg">
       <label class="f"><span>Invoice prefix</span><input name="invPrefix" value="${esc(s.invPrefix||"INV")}"></label>
       <label class="f"><span>Quotation prefix</span><input name="quotePrefix" value="${esc(s.quotePrefix||"QT")}"></label>
@@ -908,7 +1368,7 @@ function settingsForm(){
       <label class="f"><span>Default GST %</span><select name="defaultGst">${GST_RATES.map(r=>`<option value="${r}" ${(+(s.defaultGst??18))===r?"selected":""}>${r}%</option>`).join("")}</select></label>
       <label class="f"><span>Payment due in (days)</span><input name="dueDays" type="number" min="0" value="${esc(s.dueDays??15)}"></label>
       <label class="f"><span>Default size unit</span><select name="dimUnit">${Object.entries(DIMS).map(([k,v])=>`<option value="${k}" ${(s.dimUnit||"in")===k?"selected":""}>${v.label}</option>`).join("")}</select></label>
-      <label class="f full"><span>Terms & conditions</span><textarea name="terms" rows="3" placeholder="1. Goods once sold will not be taken back.&#10;2. Subject to local jurisdiction.">${esc(s.terms||"")}</textarea></label>
+      <label class="f full"><span>Additional terms & conditions</span><textarea name="terms" rows="3" placeholder="Additional terms...">${esc(s.terms||"")}</textarea></label>
     </div>
     <div class="legend-s">Default rate per sq.ft (₹)</div>
     <p class="small muted" style="margin:-4px 0 8px">Filled in automatically when you choose the material on an invoice line. Leave blank to type each time.</p>
@@ -931,17 +1391,34 @@ function settingsForm(){
     <div class="actions" style="margin-top:0"><button type="button" class="btn" data-act="backup">${svg("dl")}Download full backup (JSON)</button></div>
     <p class="small muted">Invoice numbers follow the Indian financial year, e.g. INV/26-27/001. Everyone you share this app with sees the same data.</p>
   </form>`, ro?`<button class="btn" data-act="close">Close</button>`:`<button class="btn" data-act="close">Cancel</button><button class="btn pri" type="submit" form="setForm">Save settings</button>`);
+
+  renderSettingsMedia();
 }
+
 async function saveSettings(form){
-  if(S.formFiles.some(f=>f.pending)){ toast("Wait for the logo upload to finish."); return; }
   const f=form; const s={};
-  ["name","address","city","state","phone","email","pan","accName","bankName","accNo","upi","invPrefix","quotePrefix","defaultMode","terms"].forEach(k=>s[k]=(f[k].value||"").trim());
-  s.gstin=f.gstin.value.trim().toUpperCase(); s.ifsc=f.ifsc.value.trim().toUpperCase(); s.pan=s.pan.toUpperCase();
-  s.defaultGst=+f.defaultGst.value; s.dueDays=+f.dueDays.value||0; s.dimUnit=f.dimUnit.value;
-  s.matRates={}; $$("[data-mat]",f).forEach(i=>{ if(i.value!=="") s.matRates[i.dataset.mat]=r2(i.value); }); s.logoId = S.formFiles[0]?.id || null; s.updatedAt=Date.now();
-  s.invPrefix = s.invPrefix.replace(/\//g,"-")||"INV"; s.quotePrefix = s.quotePrefix.replace(/\//g,"-")||"QT";
+  ["name","address","city","state","phone","email","pan","accName","bankName","accType","accNo","upi","invPrefix","quotePrefix","defaultMode","terms"].forEach(k=>{
+    if(f[k]) s[k]=(f[k].value||"").trim();
+  });
+  s.gstin=(f.gstin?.value||"").trim().toUpperCase();
+  s.ifsc=(f.ifsc?.value||"").trim().toUpperCase();
+  s.pan=(s.pan||"").toUpperCase();
+  s.defaultGst=+f.defaultGst?.value||18;
+  s.dueDays=+f.dueDays?.value||0;
+  s.dimUnit=f.dimUnit?.value||"in";
+  s.matRates={};
+  $$("[data-mat]",f).forEach(i=>{ if(i.value!=="") s.matRates[i.dataset.mat]=r2(i.value); });
+  s.logoId = S._settingsLogoId !== undefined ? S._settingsLogoId : (S.settings?.logoId || null);
+  s.qrId = S._settingsQrId !== undefined ? S._settingsQrId : (S.settings?.qrId || null);
+  s.updatedAt=Date.now();
+  s.invPrefix = (s.invPrefix||"INV").replace(/\//g,"-");
+  s.quotePrefix = (s.quotePrefix||"QT").replace(/\//g,"-");
   const ok = await write(()=>S.db.doc("app/settings").set(s), "Settings saved");
-  if(ok) closeSheet();
+  if(ok){
+    Object.assign(S.settings, s);
+    renderCo();
+    closeSheet();
+  }
 }
 
 /* ---------- team logins (own hosting only) ---------- */
@@ -1214,6 +1691,8 @@ document.addEventListener("click", async e => {
     case "myPass": passSheet(); break;
     case "userToggle": { const u=(S._users||[]).find(x=>x.id===id); if(!u) break; try{ await window.KhataRest.users.update(id,{active:!u.active}); toast(u.active?"Login turned off":"Login turned on"); teamSheet(); }catch(e){ toast(errMsg(e)); } break; }
     case "userReset": { S._resetFor=id; const u=(S._users||[]).find(x=>x.id===id); openSheet("Reset password", `<form id="resetForm" data-form="reset"><p style="margin-top:0">New password for <b>${esc(u?.name)}</b> (${esc(u?.username)})</p><label class="f"><span>New password (min 6)</span><input name="pw" type="text" minlength="6" required autocomplete="off"></label></form>`, `<button class="btn" data-act="team">Back</button><button class="btn pri" type="submit" form="resetForm">Save</button>`); break; }
+    case "rmSettingLogo": e.stopPropagation(); S._settingsLogoId = null; renderSettingsMedia(); break;
+    case "rmSettingQr": e.stopPropagation(); S._settingsQrId = null; renderSettingsMedia(); break;
     default: if(EXPORTS[a]) EXPORTS[a]();
   }
 });
@@ -1237,11 +1716,20 @@ document.addEventListener("input", e => {
     recalcForm();
   }
 });
-document.addEventListener("change", e => {
+document.addEventListener("change", async e => {
   const t=e.target;
   if(t.closest("#docForm")) recalcForm();
   if((t.id==="fileIn"||t.id==="fileCam") && t.files.length){ handleFiles([...t.files]); t.value=""; }
-  if(t.id==="logoIn" && t.files.length){ S.formFiles=[]; handleFiles([t.files[0]], true); t.value=""; }
+  if(t.id==="logoIn" && t.files.length){
+    const file = t.files[0]; t.value=""; toast("Uploading logo…");
+    try { const res = await S.assets.upload(file, {type:file.type}); S._settingsLogoId = res.id; renderSettingsMedia(); toast("Logo uploaded"); }
+    catch(err){ toast(errMsg(err)); }
+  }
+  if(t.id==="qrIn" && t.files.length){
+    const file = t.files[0]; t.value=""; toast("Uploading payment QR code…");
+    try { const res = await S.assets.upload(file, {type:file.type}); S._settingsQrId = res.id; renderSettingsMedia(); toast("Payment QR code uploaded"); }
+    catch(err){ toast(errMsg(err)); }
+  }
   if(t.name==="vendorId" && t.value==="__new"){ const keep=S.formFiles; t.value=""; vendorForm(null, vid=>{ const fb=keep; billForm(null, vid); S.formFiles=fb; paintFiles(); }); }
 });
 document.addEventListener("submit", async e => {
