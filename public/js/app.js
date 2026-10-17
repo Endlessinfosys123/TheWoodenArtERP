@@ -274,9 +274,22 @@ const fyOf = date => { const [y,m]=date.split("-").map(Number); const s = m>=4?y
 function calc(d){
   const gst = d.gstMode === "gst"; let sub=0, tax=0, area=0;
   const rows = (d.items||[]).map(it => { const amt=lineAmt(it); const sq = it.pricing==="sqft" ? lineSqft(it) : 0; const t = gst ? r2(amt*(+it.gst||0)/100) : 0; sub+=amt; tax+=t; area+=sq; return {...it, sqft:sq, amt, t}; });
-  sub=r2(sub); tax=r2(tax); const raw=r2(sub+tax); const total=Math.round(raw);
+  sub=r2(sub); tax=r2(tax);
+  const discount = Math.max(0, +d.discount || 0);
+  const afterDiscount = r2(Math.max(0, sub + tax - discount));
+  const hasManualRoundOff = d.hasManualRoundOff || (d.roundOff !== undefined && d.roundOff !== null && String(d.roundOff).trim() !== "");
+  let roundOff = 0;
+  let total = afterDiscount;
+  if(hasManualRoundOff){
+    roundOff = r2(+d.roundOff || 0);
+    total = r2(Math.max(0, afterDiscount + roundOff));
+  } else {
+    total = Math.round(afterDiscount);
+    roundOff = r2(total - afterDiscount);
+  }
+  const autoRoundOff = r2(Math.round(afterDiscount) - afterDiscount);
   const half = r2(tax/2);
-  return { rows, sub, tax, area:r2(area), cgst: d.inter?0:half, sgst: d.inter?0:r2(tax-half), igst: d.inter?tax:0, roundOff:r2(total-raw), total };
+  return { rows, sub, tax, area:r2(area), discount, cgst: d.inter?0:half, sgst: d.inter?0:r2(tax-half), igst: d.inter?tax:0, roundOff, hasManualRoundOff, autoRoundOff, total };
 }
 const paidOf = d => r2(sum(d.payments||[], p=>p.amount));
 function invStatus(inv){
@@ -479,19 +492,19 @@ function ledgerRow(x){
 function vSales(){
   let h = `<h2 class="vt">Sales</h2>` + seg("sales",[["inv",`Invoices (${S.invoices.length})`],["quo",`Quotations (${S.quotes.length})`]]);
   if(S.sub.sales==="inv"){
-    const list = S.invoices.filter(i=>match("inv", i.no, i.client?.name, i.client?.phone)).sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.seq||0)-(a.seq||0));
+    const list = S.invoices.filter(i=>match("inv", i.no, i.client?.name, i.client?.phone, i.site||i.client?.site)).sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.seq||0)-(a.seq||0));
     const recv = sum(S.invoices.filter(i=>invStatus(i)!=="paid"), i=>(+i.total||0)-paidOf(i));
-    h += `<div class="bar">${searchBar("inv","Search invoice no. or client")}<button class="btn sm" data-act="exportInvoices">${svg("dl")}CSV</button></div>`;
+    h += `<div class="bar">${searchBar("inv","Search invoice no., client or site")}<button class="btn sm" data-act="exportInvoices">${svg("dl")}CSV</button></div>`;
     if(S.invoices.length) h += `<p class="small muted" style="margin:0 0 8px">Pending to receive: <b class="num" style="color:var(--ink)">${inr(recv)}</b></p>`;
     h += !S.invoices.length ? emptyBox("No invoices yet","Create a GST or simple invoice, download it as PDF and share on WhatsApp.","newInvoice","New invoice")
       : !list.length ? `<p class="muted">No invoice matches “${esc(S.q.inv)}”.</p>`
-      : `<div class="list">${list.map(i=>{ const st=invStatus(i); return `<button class="row" data-act="openInvoice" data-id="${i.id}"><div class="av n">${esc(initials(i.client?.name))}</div><div class="main"><div class="t">${esc(i.client?.name||"Client")}</div><div class="s"><span class="mono">${esc(i.no)}</span> · ${fmtDate(i.date)}${i.gstMode==="gst"?" · GST":""}</div></div><div class="amt"><b>${inr(i.total)}</b><span class="chip ${st}">${st}</span></div></button>`; }).join("")}</div>`;
+      : `<div class="list">${list.map(i=>{ const st=invStatus(i); const sName = i.site||i.client?.site; return `<button class="row" data-act="openInvoice" data-id="${i.id}"><div class="av n">${esc(initials(i.client?.name))}</div><div class="main"><div class="t">${esc(i.client?.name||"Client")}${sName ? ` <span class="muted" style="font-size:12px;font-weight:normal">(${esc(sName)})</span>` : ""}</div><div class="s"><span class="mono">${esc(i.no)}</span> · ${fmtDate(i.date)}${i.gstMode==="gst"?" · GST":""}</div></div><div class="amt"><b>${inr(i.total)}</b><span class="chip ${st}">${st}</span></div></button>`; }).join("")}</div>`;
   } else {
-    const list = S.quotes.filter(q=>match("quo", q.no, q.client?.name)).sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.seq||0)-(a.seq||0));
-    h += `<div class="bar">${searchBar("quo","Search quotation no. or client")}</div>`;
+    const list = S.quotes.filter(q=>match("quo", q.no, q.client?.name, q.site||q.client?.site)).sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.seq||0)-(a.seq||0));
+    h += `<div class="bar">${searchBar("quo","Search quotation no., client or site")}</div>`;
     h += !S.quotes.length ? emptyBox("No quotations yet","Send a price quotation to a client. When they agree, convert it to an invoice in one tap.","newQuote","New quotation")
       : !list.length ? `<p class="muted">No quotation matches.</p>`
-      : `<div class="list">${list.map(q=>{ const st=q.status||"sent"; return `<button class="row" data-act="openQuote" data-id="${q.id}"><div class="av n">${esc(initials(q.client?.name))}</div><div class="main"><div class="t">${esc(q.client?.name||"Client")}</div><div class="s"><span class="mono">${esc(q.no)}</span> · ${fmtDate(q.date)}</div></div><div class="amt"><b>${inr(q.total)}</b><span class="chip ${st}">${st}</span></div></button>`; }).join("")}</div>`;
+      : `<div class="list">${list.map(q=>{ const st=q.status||"sent"; const sName = q.site||q.client?.site; return `<button class="row" data-act="openQuote" data-id="${q.id}"><div class="av n">${esc(initials(q.client?.name))}</div><div class="main"><div class="t">${esc(q.client?.name||"Client")}${sName ? ` <span class="muted" style="font-size:12px;font-weight:normal">(${esc(sName)})</span>` : ""}</div><div class="s"><span class="mono">${esc(q.no)}</span> · ${fmtDate(q.date)}</div></div><div class="amt"><b>${inr(q.total)}</b><span class="chip ${st}">${st}</span></div></button>`; }).join("")}</div>`;
   }
   return h;
 }
@@ -702,6 +715,9 @@ function docForm(kind, existing){
   const nn = d ? {no:d.no} : nextNo(list, isQ?(st.quotePrefix||"QT"):(st.invPrefix||"INV"), date);
   const gst = d ? d.gstMode==="gst" : (st.defaultMode ? st.defaultMode==="gst" : !!st.gstin);
   const cl = d?.client || {};
+  const siteVal = d?.site || cl.site || "";
+  const discountVal = (d?.discount !== undefined && d?.discount !== null && +d.discount > 0) ? d.discount : "";
+  const roundOffVal = (d?.hasManualRoundOff && d?.roundOff !== undefined && d?.roundOff !== null) ? d.roundOff : "";
   const items = d?.items?.length ? d.items : [{}];
   const body = `<form id="docForm" data-form="doc" data-kind="${kind}" data-id="${d?.id||""}" autocomplete="off">
     <div class="seg" role="group" style="margin-bottom:14px"><button type="button" data-act="mode" data-v="gst" aria-pressed="${gst}">GST ${isQ?"quotation":"invoice"}</button><button type="button" data-act="mode" data-v="none" aria-pressed="${!gst}">Simple (no GST)</button></div>
@@ -715,6 +731,7 @@ function docForm(kind, existing){
     <div class="legend-s">${isQ?"Quotation for":"Bill to"}</div>
     <div class="fg">
       <label class="f full"><span>Client name</span><input name="cname" list="clientList" required value="${esc(cl.name||"")}"></label>
+      <label class="f full"><span>Site / Side name</span><input name="csite" placeholder="e.g. Living Room, Site A, Project XYZ" value="${esc(siteVal)}"></label>
       <label class="f"><span>Phone</span><input name="cphone" type="tel" inputmode="tel" value="${esc(cl.phone||"")}"></label>
       <label class="f gstonly" ${gst?"":"hidden"}><span>Client GSTIN</span><input name="cgstin" maxlength="15" style="text-transform:uppercase" value="${esc(cl.gstin||"")}"></label>
       <label class="f full"><span>Address</span><input name="caddress" value="${esc(cl.address||"")}"></label>
@@ -723,6 +740,10 @@ function docForm(kind, existing){
     <div class="legend-s">Items</div>
     <div class="items" id="items">${items.map(it=>itemRow(it,gst)).join("")}</div>
     <button type="button" class="btn sm" style="margin-top:10px" data-act="addItem">${svg("plus")}Add item</button>
+    <div class="fg" style="margin-top:14px">
+      <label class="f"><span>Discount (₹)</span><input name="discount" type="number" inputmode="decimal" step="any" min="0" placeholder="0.00" value="${esc(discountVal)}"></label>
+      <label class="f"><span>Round off (₹)</span><input name="roundOff" type="number" inputmode="decimal" step="any" placeholder="Auto" value="${esc(roundOffVal)}"></label>
+    </div>
     <div class="totals" id="totals"></div>
     <div class="legend-s">Notes</div>
     <label class="f"><textarea name="notes" placeholder="${isQ?"Scope of work, delivery time, payment terms…":"Thank you for your business."}">${esc(d?.notes ?? "")}</textarea></label>
@@ -740,14 +761,28 @@ function interOf(form){ const cs=form.cstate?.value, ms=S.settings.state; return
 function recalcForm(){
   const form=$("#docForm"); if(!form) return;
   const gst = form.gstMode.value==="gst"; const items=readItems(form); const inter=gst && interOf(form);
-  const c = calc({gstMode:form.gstMode.value, inter, items});
+  const discountVal = form.discount ? form.discount.value.trim() : "";
+  const roundOffVal = form.roundOff ? form.roundOff.value.trim() : "";
+  const hasManualRoundOff = roundOffVal !== "";
+  const c = calc({
+    gstMode: form.gstMode.value,
+    inter,
+    items,
+    discount: discountVal,
+    roundOff: hasManualRoundOff ? roundOffVal : undefined,
+    hasManualRoundOff
+  });
+  if(form.roundOff && !hasManualRoundOff){
+    form.roundOff.placeholder = `Auto (${c.autoRoundOff >= 0 ? "+" : ""}${c.autoRoundOff.toFixed(2)})`;
+  }
   $$(".item",form).forEach(r=>{ const it=readRow(r); const a=lineAmt(it); const g = gst ? r2(a*(it.gst||0)/100):0;
     const area = it.pricing==="sqft" ? `${it.sqft.toFixed(2)} sq.ft${it.rate?` × ${inr(it.rate,2)}`:""}` : "";
     $(".lineamt",r).textContent = (area||a) ? [area, a?`Amount ${inr(a,2)}${gst&&g?` + GST ${inr(g,2)}`:""}`:""].filter(Boolean).join("  =  ") : ""; });
   let t = (c.area ? `<div class="muted"><span>Total area</span><span>${c.area.toFixed(2)} sq.ft</span></div>` : "") + `<div><span>Subtotal</span><span>${inr(c.sub,2)}</span></div>`;
   if(gst){ t += inter ? `<div><span>IGST</span><span>${inr(c.igst,2)}</span></div>` : `<div><span>CGST</span><span>${inr(c.cgst,2)}</span></div><div><span>SGST</span><span>${inr(c.sgst,2)}</span></div>`; }
-  if(c.roundOff) t += `<div class="muted"><span>Round off</span><span>${c.roundOff>0?"+":""}${c.roundOff.toFixed(2)}</span></div>`;
-  t += `<div class="gt"><span>Total</span><span>${inr(c.total,0)}</span></div>`;
+  if(c.discount) t += `<div style="color:var(--good,#15803d)"><span>Discount</span><span>-${inr(c.discount,2)}</span></div>`;
+  if(c.roundOff) t += `<div class="muted"><span>Round off ${c.hasManualRoundOff?"(manual)":""}</span><span>${c.roundOff>0?"+":""}${c.roundOff.toFixed(2)}</span></div>`;
+  t += `<div class="gt"><span>Total</span><span>${inr(c.total)}</span></div>`;
   if(gst && !S.settings.state) t += `<p class="small muted" style="margin:6px 0 0">Tip: set your company state in Settings so CGST/SGST vs IGST is picked automatically.</p>`;
   $("#totals").innerHTML = t;
 }
@@ -756,11 +791,23 @@ async function saveDoc(form){
   const items = readItems(form);
   if(!items.length){ toast("Add at least one item."); return; }
   const gstMode=form.gstMode.value, inter = gstMode==="gst" && interOf(form);
-  const c = calc({gstMode, inter, items});
+  const discountVal = form.discount ? form.discount.value.trim() : "";
+  const roundOffVal = form.roundOff ? form.roundOff.value.trim() : "";
+  const hasManualRoundOff = roundOffVal !== "";
+  const c = calc({
+    gstMode,
+    inter,
+    items,
+    discount: discountVal,
+    roundOff: hasManualRoundOff ? roundOffVal : undefined,
+    hasManualRoundOff
+  });
   const date=form.date.value;
+  const siteVal = form.csite ? form.csite.value.trim() : "";
   const doc = { no:form.no.value.trim(), date, fy:fyOf(date), gstMode, inter,
-    client:{ name:form.cname.value.trim(), phone:form.cphone.value.trim(), address:form.caddress.value.trim(), gstin:(form.cgstin.value||"").trim().toUpperCase(), state:form.cstate.value },
-    items, notes:form.notes.value.trim(), sub:c.sub, tax:c.tax, total:c.total, updatedAt:Date.now() };
+    site: siteVal,
+    client:{ name:form.cname.value.trim(), site: siteVal, phone:form.cphone.value.trim(), address:form.caddress.value.trim(), gstin:(form.cgstin.value||"").trim().toUpperCase(), state:form.cstate.value },
+    items, discount:c.discount, roundOff:c.roundOff, hasManualRoundOff, notes:form.notes.value.trim(), sub:c.sub, tax:c.tax, total:c.total, updatedAt:Date.now() };
   const m = doc.no.match(/(\d+)\s*$/); doc.seq = m ? +m[1] : 0;
   if(isQ) doc.validTill=form.validTill.value; else doc.dueDate=form.dueDate.value;
   const col = isQ?"quotes":"invoices";
@@ -778,7 +825,7 @@ async function saveDoc(form){
     if(cName){
       const existingCli = S.clients.find(x => (x.name||"").trim().toLowerCase() === cName.toLowerCase());
       if(!existingCli){
-        const newC = { name: cName, phone: doc.client.phone||"", gstin: doc.client.gstin||"", address: doc.client.address||"", state: doc.client.state||"", notes:"", createdAt: Date.now(), updatedAt: Date.now(), ...uidMeta() };
+        const newC = { name: cName, site: siteVal, phone: doc.client.phone||"", gstin: doc.client.gstin||"", address: doc.client.address||"", state: doc.client.state||"", notes:"", createdAt: Date.now(), updatedAt: Date.now(), ...uidMeta() };
         const cliRef = S.db.collection("clients").doc();
         cliRef.set(newC).catch(()=>{});
         S.clients.push({ id: cliRef.id, ...newC });
@@ -797,8 +844,9 @@ function docBody(d, kind){
   </tbody></table></div>
   <div class="totals">${c.area?`<div class="muted"><span>Total area</span><span>${c.area.toFixed(2)} sq.ft</span></div>`:""}<div><span>Subtotal</span><span>${inr(c.sub,2)}</span></div>
   ${gst ? (d.inter?`<div><span>IGST</span><span>${inr(c.igst,2)}</span></div>`:`<div><span>CGST</span><span>${inr(c.cgst,2)}</span></div><div><span>SGST</span><span>${inr(c.sgst,2)}</span></div>`):""}
-  ${c.roundOff?`<div class="muted"><span>Round off</span><span>${c.roundOff.toFixed(2)}</span></div>`:""}
-  <div class="gt"><span>Total</span><span>${inr(c.total,0)}</span></div></div>
+  ${c.discount?`<div style="color:var(--good,#15803d)"><span>Discount</span><span>-${inr(c.discount,2)}</span></div>`:""}
+  ${c.roundOff?`<div class="muted"><span>Round off ${c.hasManualRoundOff?"(manual)":""}</span><span>${c.roundOff>0?"+":""}${c.roundOff.toFixed(2)}</span></div>`:""}
+  <div class="gt"><span>Total</span><span>${inr(c.total)}</span></div></div>
   <p class="small muted" style="margin:6px 0 0">Rupees ${inWords(c.total)} only</p>
   ${d.notes?`<p class="small" style="white-space:pre-wrap">${esc(d.notes)}</p>`:""}`;
 }
@@ -806,7 +854,8 @@ function dInvoice(id, refresh){
   const d=S.invoices.find(x=>x.id===id); if(!d){ missing("invoice",id,refresh); return; }
   const st=invStatus(d), paid=paidOf(d), due=r2((+d.total||0)-paid);
   const cl=d.client||{};
-  let b = `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="min-width:0"><div class="mono muted">${esc(d.no)}</div><div style="font-weight:700;font-size:17px">${esc(cl.name)}</div><div class="small muted">${esc([cl.phone, cl.gstin&&("GSTIN "+cl.gstin)].filter(Boolean).join(" · "))}</div></div><span class="chip ${st}">${st}</span></div>
+  const siteName = d.site || cl.site;
+  let b = `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="min-width:0"><div class="mono muted">${esc(d.no)}</div><div style="font-weight:700;font-size:17px">${esc(cl.name)}</div>${siteName?`<div style="font-size:13px;font-weight:600;color:var(--brand)">Site: ${esc(siteName)}</div>`:""}<div class="small muted">${esc([cl.phone, cl.gstin&&("GSTIN "+cl.gstin)].filter(Boolean).join(" · "))}</div></div><span class="chip ${st}">${st}</span></div>
   <div class="big" style="margin-top:8px">${inr(d.total)}</div>
   <dl class="dl" style="margin-top:6px"><dt>Date</dt><dd>${fmtDate(d.date)}</dd><dt>Due</dt><dd>${fmtDate(d.dueDate)}</dd><dt>Received</dt><dd class="num" style="color:var(--good)">${inr(paid)}</dd><dt>Balance</dt><dd class="num" style="font-weight:700">${inr(Math.max(0,due))}</dd>${d.quoteNo?`<dt>From quotation</dt><dd class="mono">${esc(d.quoteNo)}</dd>`:""}</dl>
   <div class="actions"><button class="btn pri" data-act="pdf" data-kind="invoice" data-id="${d.id}">${svg("dl")}PDF</button><button class="btn" data-act="shareWhatsApp" data-kind="invoice" data-id="${d.id}">${svg("wa")}WhatsApp</button>${S.canWrite&&st!=="paid"?`<button class="btn" data-act="payInvoice" data-id="${d.id}">Record payment</button>`:""}</div>`;
@@ -819,7 +868,8 @@ function dInvoice(id, refresh){
 function dQuote(id, refresh){
   const d=S.quotes.find(x=>x.id===id); if(!d){ missing("quote",id,refresh); return; }
   const st=d.status||"sent"; const cl=d.client||{};
-  let b = `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="min-width:0"><div class="mono muted">${esc(d.no)}</div><div style="font-weight:700;font-size:17px">${esc(cl.name)}</div><div class="small muted">${esc(cl.phone||"")}</div></div><span class="chip ${st}">${st}</span></div>
+  const siteName = d.site || cl.site;
+  let b = `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="min-width:0"><div class="mono muted">${esc(d.no)}</div><div style="font-weight:700;font-size:17px">${esc(cl.name)}</div>${siteName?`<div style="font-size:13px;font-weight:600;color:var(--brand)">Site: ${esc(siteName)}</div>`:""}<div class="small muted">${esc(cl.phone||"")}</div></div><span class="chip ${st}">${st}</span></div>
   <div class="big" style="margin-top:8px">${inr(d.total)}</div>
   <dl class="dl" style="margin-top:6px"><dt>Date</dt><dd>${fmtDate(d.date)}</dd><dt>Valid till</dt><dd>${fmtDate(d.validTill)}</dd>${d.invoiceNo?`<dt>Invoice</dt><dd class="mono">${esc(d.invoiceNo)}</dd>`:""}</dl>
   <div class="actions"><button class="btn pri" data-act="pdf" data-kind="quote" data-id="${d.id}">${svg("dl")}PDF</button><button class="btn" data-act="shareWhatsApp" data-kind="quote" data-id="${d.id}">${svg("wa")}WhatsApp</button>${S.canWrite&&!d.invoiceId?`<button class="btn" data-act="convertQuote" data-id="${d.id}">Convert to invoice</button>`:""}</div>`;
@@ -950,22 +1000,28 @@ async function buildPDFDoc(d, kind){
   y += 9.5;
 
   // 4. Customer & Order Info Grid
+  const siteVal = (d.site || cl.site || "").trim();
+  const hasSite = !!siteVal;
   const cw1 = 92;
   const cw2 = contentWidth - cw1; // 92
   const r1h = 6.8;
+  const rSiteH = hasSite ? 6.8 : 0;
   const r2h = 6.8;
   doc.setFontSize(8.5);
   const addrText = cl.address ? pdfSafe(cl.address) : "—";
   const addrLines = doc.splitTextToSize(addrText, contentWidth - 26);
   const r3h = Math.max(6.8, addrLines.length * 3.8 + 2.8);
-  const custTableH = r1h + r2h + r3h;
+  const custTableH = r1h + rSiteH + r2h + r3h;
 
   doc.setDrawColor(...BORDER);
   doc.setLineWidth(0.3);
   doc.rect(M, y, contentWidth, custTableH, "S");
   doc.line(M, y + r1h, M + contentWidth, y + r1h);
-  doc.line(M, y + r1h + r2h, M + contentWidth, y + r1h + r2h);
-  doc.line(M + cw1, y, M + cw1, y + r1h + r2h);
+  if(hasSite) {
+    doc.line(M, y + r1h + rSiteH, M + contentWidth, y + r1h + rSiteH);
+  }
+  doc.line(M, y + r1h + rSiteH + r2h, M + contentWidth, y + r1h + rSiteH + r2h);
+  doc.line(M + cw1, y, M + cw1, y + r1h + rSiteH + r2h);
 
   // Row 1
   doc.setFont("helvetica", "bold"); doc.setTextColor(...INK);
@@ -978,22 +1034,41 @@ async function buildPDFDoc(d, kind){
   doc.setFont("helvetica", "normal");
   doc.text(String(d.no || "—"), M + cw1 + 26, y + 4.6);
 
-  // Row 2
+  let curY = y + r1h;
+  // Row 2 (Site Name if present)
+  if(hasSite) {
+    doc.setFont("helvetica", "bold");
+    doc.text("Site Name:", M + 2.5, curY + 4.6);
+    doc.setFont("helvetica", "normal");
+    doc.text(doc.splitTextToSize(pdfSafe(siteVal), cw1 - 24)[0], M + 22, curY + 4.6);
+
+    const hasTermDate = isQ ? !!d.validTill : !!d.dueDate;
+    if(hasTermDate) {
+      doc.setFont("helvetica", "bold");
+      doc.text(isQ ? "Valid Till:" : "Due Date:", M + cw1 + 2.5, curY + 4.6);
+      doc.setFont("helvetica", "normal");
+      doc.text(fmtDate(isQ ? d.validTill : d.dueDate), M + cw1 + 26, curY + 4.6);
+    }
+    curY += rSiteH;
+  }
+
+  // Row: Mobile No & Date
   doc.setFont("helvetica", "bold");
-  doc.text("Mobile No:", M + 2.5, y + r1h + 4.6);
+  doc.text("Mobile No:", M + 2.5, curY + 4.6);
   doc.setFont("helvetica", "normal");
-  doc.text(cl.phone ? String(cl.phone) : "—", M + 22, y + r1h + 4.6);
+  doc.text(cl.phone ? String(cl.phone) : "—", M + 22, curY + 4.6);
 
   doc.setFont("helvetica", "bold");
-  doc.text("Date:", M + cw1 + 2.5, y + r1h + 4.6);
+  doc.text("Date:", M + cw1 + 2.5, curY + 4.6);
   doc.setFont("helvetica", "normal");
-  doc.text(fmtDate(d.date), M + cw1 + 26, y + r1h + 4.6);
+  doc.text(fmtDate(d.date), M + cw1 + 26, curY + 4.6);
+  curY += r2h;
 
-  // Row 3 (Address)
+  // Row: Address
   doc.setFont("helvetica", "bold");
-  doc.text("Address:", M + 2.5, y + r1h + r2h + 4.6);
+  doc.text("Address:", M + 2.5, curY + 4.6);
   doc.setFont("helvetica", "normal");
-  doc.text(addrLines, M + 22, y + r1h + r2h + 4.6);
+  doc.text(addrLines, M + 22, curY + 4.6);
 
   y += custTableH + 5;
 
@@ -1119,6 +1194,9 @@ async function buildPDFDoc(d, kind){
       summaryRows.push(["CGST", pdfAmt(c.cgst)]);
       summaryRows.push(["SGST", pdfAmt(c.sgst)]);
     }
+  }
+  if(c.discount) {
+    summaryRows.push(["Discount", "-" + pdfAmt(c.discount)]);
   }
   if(c.roundOff) {
     summaryRows.push(["Round Off", (c.roundOff > 0 ? "+" : "") + c.roundOff.toFixed(2)]);
@@ -1420,7 +1498,13 @@ async function buildPDFDoc(d, kind){
     }
   }
 
-  const fname = `${(isQ ? "Quotation" : "Invoice")}_${(d.no || "").replace(/[^\w-]+/g, "-")}_${(cl.name || "").replace(/[^\w]+/g, "-").slice(0, 30)}.pdf`.replace(/-+/g, "-");
+  const docKind = isQ ? "Quotation" : "Invoice";
+  const cleanNo = (d.no || "").replace(/[^\w-]+/g, "-");
+  const cleanClient = (cl.name || "").replace(/[^\w]+/g, "-").slice(0, 30);
+  const cleanSite = siteVal ? siteVal.replace(/[^\w]+/g, "-").slice(0, 30) : "";
+  const nameParts = [docKind, cleanNo, cleanClient];
+  if(cleanSite) nameParts.push(cleanSite);
+  const fname = `${nameParts.filter(Boolean).join("_")}.pdf`.replace(/-+/g, "-").replace(/_+/g, "_");
   const blob = doc.output("blob");
   return { doc, blob, fname };
 }
@@ -1602,6 +1686,7 @@ function clientForm(c, after){
   c=c||{}; S._afterClient = after||null;
   openSheet(c.id?"Edit client":"Add client", `<form id="cliForm" data-form="cli" data-id="${c.id||""}"><div class="fg">
     <label class="f full"><span>Client / Party name</span><input name="name" required value="${esc(c.name||"")}"></label>
+    <label class="f full"><span>Site / Side name</span><input name="site" value="${esc(c.site||"")}" placeholder="e.g. Living Room, Site A, Project XYZ"></label>
     <label class="f"><span>Phone</span><input name="phone" type="tel" inputmode="tel" value="${esc(c.phone||"")}"></label>
     <label class="f"><span>GSTIN</span><input name="gstin" maxlength="15" style="text-transform:uppercase" value="${esc(c.gstin||"")}"></label>
     <label class="f full"><span>Address</span><input name="address" value="${esc(c.address||"")}"></label>
@@ -1611,7 +1696,7 @@ function clientForm(c, after){
 }
 async function saveCli(form){
   const id=form.dataset.id;
-  const c={ name:form.name.value.trim(), phone:form.phone.value.trim(), gstin:form.gstin.value.trim().toUpperCase(), address:form.address.value.trim(), state:form.state.value, notes:form.notes.value.trim(), updatedAt:Date.now() };
+  const c={ name:form.name.value.trim(), site:form.site?form.site.value.trim():"", phone:form.phone.value.trim(), gstin:form.gstin.value.trim().toUpperCase(), address:form.address.value.trim(), state:form.state.value, notes:form.notes.value.trim(), updatedAt:Date.now() };
   if(!c.name){ toast("Enter a client name."); return; }
   let ref;
   const ok = await write(async()=>{
@@ -1631,6 +1716,7 @@ function dClient(id, refresh){
   const ph = (c.phone||"").replace(/\D/g,""); const num = ph.length===10 ? "91"+ph : ph;
   let b=`<div class="tiles"><div class="tile"><div class="k">Billed</div><div class="v num">${inrShort(billed)}</div></div><div class="tile good"><div class="k">Received</div><div class="v num">${inrShort(received)}</div></div><div class="tile ${due>0?"bad":"good"}"><div class="k">Due</div><div class="v num">${inrShort(Math.max(0,due))}</div></div></div>
   <dl class="dl" style="margin-top:12px">
+    ${c.site?`<dt>Site / Side</dt><dd style="font-weight:600;color:var(--brand)">${esc(c.site)}</dd>`:""}
     ${c.phone?`<dt>Phone</dt><dd style="display:flex;align-items:center;gap:10px">${esc(c.phone)}<a href="tel:${esc(c.phone)}" class="btn sm" style="padding:2px 8px">Call</a><a href="https://wa.me/${num}" target="_blank" rel="noopener" class="btn sm" style="padding:2px 8px">${svg("wa",1.8)} WhatsApp</a></dd>`:""}
     ${c.gstin?`<dt>GSTIN</dt><dd class="mono">${esc(c.gstin)}</dd>`:""}
     ${c.state?`<dt>State</dt><dd>${esc(c.state)}</dd>`:""}
@@ -1638,8 +1724,8 @@ function dClient(id, refresh){
     ${c.notes?`<dt>Notes</dt><dd>${esc(c.notes)}</dd>`:""}
   </dl>`;
   if(S.canWrite) b+=`<div class="actions"><button class="btn pri" data-act="newInvoiceForClient" data-id="${id}">${svg("plus")}New Invoice</button><button class="btn" data-act="newQuoteForClient" data-id="${id}">${svg("plus")}New Quotation</button></div>`;
-  b+=`<div class="legend-s">Invoices (${invs.length})</div>` + (invs.length?`<div class="list">${invs.map(i=>{const st=invStatus(i); return `<button class="row" data-act="openInvoice" data-id="${i.id}"><div class="av n">${svg("doc")}</div><div class="main"><div class="t"><span class="mono">${esc(i.no)}</span></div><div class="s">${fmtDate(i.date)}${i.gstMode==="gst"?" · GST":""}</div></div><div class="amt"><b>${inr(i.total)}</b><span class="chip ${st}">${st}</span></div></button>`;}).join("")}</div>`:`<p class="small muted">No invoices for this client yet.</p>`);
-  if(quotes.length) b+=`<div class="legend-s">Quotations (${quotes.length})</div><div class="list">${quotes.map(q=>{const st=q.status||"sent"; return `<button class="row" data-act="openQuote" data-id="${q.id}"><div class="av n">${svg("quote")}</div><div class="main"><div class="t"><span class="mono">${esc(q.no)}</span></div><div class="s">${fmtDate(q.date)}</div></div><div class="amt"><b>${inr(q.total)}</b><span class="chip ${st}">${st}</span></div></button>`;}).join("")}</div>`;
+  b+=`<div class="legend-s">Invoices (${invs.length})</div>` + (invs.length?`<div class="list">${invs.map(i=>{const st=invStatus(i); const sSite = i.site || i.client?.site; return `<button class="row" data-act="openInvoice" data-id="${i.id}"><div class="av n">${svg("doc")}</div><div class="main"><div class="t"><span class="mono">${esc(i.no)}</span></div><div class="s">${fmtDate(i.date)}${sSite ? ` · ${esc(sSite)}` : ""}${i.gstMode==="gst"?" · GST":""}</div></div><div class="amt"><b>${inr(i.total)}</b><span class="chip ${st}">${st}</span></div></button>`;}).join("")}</div>`:`<p class="small muted">No invoices for this client yet.</p>`);
+  if(quotes.length) b+=`<div class="legend-s">Quotations (${quotes.length})</div><div class="list">${quotes.map(q=>{const st=q.status||"sent"; const sSite = q.site || q.client?.site; return `<button class="row" data-act="openQuote" data-id="${q.id}"><div class="av n">${svg("quote")}</div><div class="main"><div class="t"><span class="mono">${esc(q.no)}</span></div><div class="s">${fmtDate(q.date)}${sSite ? ` · ${esc(sSite)}` : ""}</div></div><div class="amt"><b>${inr(q.total)}</b><span class="chip ${st}">${st}</span></div></button>`;}).join("")}</div>`;
   if(S.canWrite) b+=`<div class="actions" style="margin-top:18px"><button class="btn" data-act="editClient" data-id="${id}">${svg("edit")}Edit</button><button class="btn danger" data-act="delClient" data-id="${id}">${svg("trash")}Delete</button></div>`;
   openSheet(c.name, b, "", {kind:"detail", type:"client", id});
 }
@@ -2083,7 +2169,7 @@ async function saveText(filename, text){
   try{ await S.dl.save({filename, data:(/\.csv$/.test(filename)?"\ufeff":"")+text}); }catch(e){ if(e?.code!=="declined") toast("Could not save file."); }
 }
 const EXPORTS = {
-  exportInvoices: ()=> saveText(`invoices_${today()}.csv`, csv([["Invoice no","Date","Client","Client GSTIN","Type","Total sq.ft","Taxable","Tax","Total","Received","Balance","Status","Due date"], ...[...S.invoices].sort((a,b)=>(a.date||"").localeCompare(b.date||"")).map(i=>[i.no,i.date,i.client?.name,i.client?.gstin,i.gstMode==="gst"?"GST":"Simple",calc(i).area,i.sub,i.tax,i.total,paidOf(i),r2(i.total-paidOf(i)),invStatus(i),i.dueDate])])),
+  exportInvoices: ()=> saveText(`invoices_${today()}.csv`, csv([["Invoice no","Date","Client","Site","Client GSTIN","Type","Total sq.ft","Taxable","Discount","Round off","Tax","Total","Received","Balance","Status","Due date"], ...[...S.invoices].sort((a,b)=>(a.date||"").localeCompare(b.date||"")).map(i=>{ const ci=calc(i); return [i.no,i.date,i.client?.name,i.site||i.client?.site||"",i.client?.gstin,i.gstMode==="gst"?"GST":"Simple",ci.area,ci.sub,ci.discount||0,ci.roundOff||0,ci.tax,ci.total,paidOf(i),r2(ci.total-paidOf(i)),invStatus(i),i.dueDate]; })])),
   exportClients: ()=> saveText(`clients_${today()}.csv`, csv([["Client name","Phone","Email","GSTIN","PAN","State","Address","Total Billed","Total Received","Balance Due"], ...[...S.clients].sort((a,b)=>(a.name||"").localeCompare(b.name||"")).map(c=>{ const invs=S.invoices.filter(i=>(i.client?.id===c.id)||(i.client?.name&&i.client.name.trim().toLowerCase()===(c.name||"").trim().toLowerCase())); const billed=sum(invs,i=>+i.total||0); const received=sum(invs,paidOf); const due=Math.max(0,billed-received); return [c.name,c.phone,c.email,c.gstin,c.pan,c.state,c.address,billed,received,due]; })])),
   exportLedger: ()=> { const L=ledger().filter(x=>x.date?.startsWith(S.month)); return saveText(`income-expense_${S.month}.csv`, csv([["Date","Type","Amount","Category","Party","Mode","Note"], ...L.map(x=>[x.date,x.type,x.amount,x.cat,x.party,x.mode,x.note])])); },
   exportStock: ()=> saveText(`stock_${today()}.csv`, csv([["Material","Type","Thickness mm","Unit","HSN","Current stock","Min stock","Purchase rate","Selling rate","Value"], ...S.materials.map(m=>[m.name,m.category,m.thick,m.unit,m.hsn,stockOf(m),m.minStock,m.rate,m.saleRate,r2(Math.max(0,stockOf(m))*(+m.rate||0))])])),
@@ -2146,12 +2232,12 @@ document.addEventListener("click", async e => {
     }
     case "newInvoiceForClient": {
       const c = S.clients.find(x=>x.id===id);
-      if(c){ docForm("invoice"); fillDocForm({client:{name:c.name, phone:c.phone, gstin:c.gstin, address:c.address, state:c.state}}); }
+      if(c){ docForm("invoice"); fillDocForm({site:c.site, client:{name:c.name, site:c.site, phone:c.phone, gstin:c.gstin, address:c.address, state:c.state}}); }
       break;
     }
     case "newQuoteForClient": {
       const c = S.clients.find(x=>x.id===id);
-      if(c){ docForm("quote"); fillDocForm({client:{name:c.name, phone:c.phone, gstin:c.gstin, address:c.address, state:c.state}}); }
+      if(c){ docForm("quote"); fillDocForm({site:c.site, client:{name:c.name, site:c.site, phone:c.phone, gstin:c.gstin, address:c.address, state:c.state}}); }
       break;
     }
     case "shareWhatsApp": {
@@ -2250,7 +2336,15 @@ async function deleteAssets(files){ if(!S.assets||!files?.length) return; for(co
 function fillDocForm(d){
   const f=$("#docForm"); if(!f) return;
   const gst=d.gstMode==="gst"; f.gstMode.value=gst?"gst":"none"; $$("[data-act=mode]",f).forEach(b=>b.setAttribute("aria-pressed", (b.dataset.v==="gst")===gst)); $$(".gstonly",f).forEach(x=>x.hidden=!gst);
-  const cl=d.client||{}; f.cname.value=cl.name||""; f.cphone.value=cl.phone||""; f.caddress.value=cl.address||""; f.cgstin.value=cl.gstin||""; if(cl.state) f.cstate.value=cl.state;
+  const cl=d.client||{};
+  f.cname.value=cl.name||"";
+  if(f.csite) f.csite.value=d.site||cl.site||"";
+  f.cphone.value=cl.phone||"";
+  f.caddress.value=cl.address||"";
+  f.cgstin.value=cl.gstin||"";
+  if(cl.state) f.cstate.value=cl.state;
+  if(f.discount) f.discount.value=(d.discount!==undefined&&d.discount!==null&&+d.discount>0)?d.discount:"";
+  if(f.roundOff) f.roundOff.value=(d.hasManualRoundOff&&d.roundOff!==undefined&&d.roundOff!==null)?d.roundOff:"";
   $("#items").innerHTML=(d.items||[{}]).map(it=>itemRow(it,gst)).join(""); f.notes.value=d.notes||""; recalcForm();
 }
 document.addEventListener("input", e => {
@@ -2266,7 +2360,7 @@ document.addEventListener("input", e => {
   if(t.closest("#docForm")){
     if(t.name==="material") onMaterialOrThickChange(t.closest(".item"), "material");
     if(t.name==="thick") onMaterialOrThickChange(t.closest(".item"), "thick");
-    if(t.name==="cname"){ const c=clientNames().get(t.value); if(c){ const f=t.form; ["phone","address","gstin"].forEach(k=>{ if(!f["c"+k].value) f["c"+k].value=c[k]||""; }); if(c.state) f.cstate.value=c.state; } }
+    if(t.name==="cname"){ const c=clientNames().get(t.value); if(c){ const f=t.form; ["phone","address","gstin"].forEach(k=>{ if(!f["c"+k].value) f["c"+k].value=c[k]||""; }); if(f.csite && !f.csite.value && c.site) f.csite.value=c.site; if(c.state) f.cstate.value=c.state; } }
     if(t.name==="date" && !t.form.dataset.id){ const isQ=t.form.dataset.kind==="quote"; const nn=nextNo(isQ?S.quotes:S.invoices, isQ?(S.settings.quotePrefix||"QT"):(S.settings.invPrefix||"INV"), t.value); if(/\/\d{2}-\d{2}\/\d+$/.test(t.form.no.value)) t.form.no.value=nn.no; }
     recalcForm();
   }
