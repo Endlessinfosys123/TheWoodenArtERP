@@ -511,22 +511,27 @@ function vSales(){
 
 /* CLIENTS */
 function vClients(){
-  const list = S.clients.filter(c=>match("cli", c.name, c.phone, c.gstin, c.address)).sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+  const list = S.clients.filter(c => {
+    const sites = getClientSites(c).join(" ");
+    return match("cli", c.name, c.phone, c.gstin, c.address, c.notes, sites);
+  }).sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+
   const totalDue = sum(S.clients, c => {
-    const invs = S.invoices.filter(i=>(i.client?.id===c.id) || (i.client?.name && i.client.name.trim().toLowerCase()===(c.name||"").trim().toLowerCase()));
-    return Math.max(0, sum(invs, i=>+i.total||0) - sum(invs, paidOf));
+    const ledger = buildClientLedger(c);
+    return Math.max(0, ledger.closingBalance);
   });
+
   let h = `<h2 class="vt">Clients</h2>`;
-  h += `<div class="bar">${searchBar("cli","Search client name, phone or GSTIN")}<button class="btn sm" data-act="exportClients">${svg("dl")}CSV</button><button class="btn pri sm" data-act="newClient">+ Client</button></div>`;
+  h += `<div class="bar">${searchBar("cli","Search client name, phone, site or GSTIN")}<button class="btn sm" data-act="exportClients">${svg("dl")}CSV</button><button class="btn pri sm" data-act="newClient">+ Client</button></div>`;
   if(S.clients.length) h += `<p class="small muted" style="margin:0 0 8px">Total outstanding from clients: <b class="num" style="color:var(--ink)">${inr(totalDue)}</b> · ${S.clients.length} client${S.clients.length===1?"":"s"}</p>`;
-  h += !S.clients.length ? emptyBox("No clients yet","Add clients to track their invoices, quotations, and outstanding payments.","newClient","Add client")
+  h += !S.clients.length ? emptyBox("No clients yet","Add clients to track their daily work, sites, invoices, payments, and monthly khata ledger.","newClient","Add client")
     : !list.length ? `<p class="muted">No client matches “${esc(S.q.cli)}”.</p>`
     : `<div class="list">${list.map(c=>{
-        const invs = S.invoices.filter(i=>(i.client?.id===c.id) || (i.client?.name && i.client.name.trim().toLowerCase()===(c.name||"").trim().toLowerCase()));
-        const billed = sum(invs, i=>+i.total||0);
-        const received = sum(invs, paidOf);
-        const due = billed - received;
-        return `<button class="row" data-act="openClient" data-id="${c.id}"><div class="av n">${esc(initials(c.name))}</div><div class="main"><div class="t">${esc(c.name)}</div><div class="s">${esc([c.phone, c.gstin&&("GSTIN "+c.gstin), c.state].filter(Boolean).join(" · ")||"—")}</div></div><div class="amt"><b>${inr(Math.max(0,due))}</b><span class="small muted">${due>0?"due":"clear"} · ${invs.length} inv</span></div></button>`;
+        const sites = getClientSites(c);
+        const ledger = buildClientLedger(c);
+        const due = ledger.closingBalance;
+        const siteDisplay = sites.length ? `${sites.slice(0,2).join(", ")}${sites.length>2?` +${sites.length-2} more`:""}` : "";
+        return `<button class="row" data-act="openClient" data-id="${c.id}"><div class="av n">${esc(initials(c.name))}</div><div class="main"><div class="t">${esc(c.name)}${siteDisplay ? ` <span class="chip-site" style="font-size:10px;padding:1px 6px">${esc(siteDisplay)}</span>` : ""}</div><div class="s">${esc([c.phone, c.gstin&&("GSTIN "+c.gstin), c.notes].filter(Boolean).join(" · ")||"—")}</div></div><div class="amt"><b>${inr(Math.max(0,due))}</b><span class="small muted">${due>0?"due":"clear"} · ${sites.length} site${sites.length===1?"":"s"}</span></div></button>`;
       }).join("")}</div>`;
   return h;
 }
@@ -731,7 +736,7 @@ function docForm(kind, existing){
     <div class="legend-s">${isQ?"Quotation for":"Bill to"}</div>
     <div class="fg">
       <label class="f full"><span>Client name</span><input name="cname" list="clientList" required value="${esc(cl.name||"")}"></label>
-      <label class="f full"><span>Site / Side name</span><input name="csite" placeholder="e.g. Living Room, Site A, Project XYZ" value="${esc(siteVal)}"></label>
+      <label class="f full"><span>Site / Side name</span><input name="csite" list="clientSiteList" placeholder="e.g. Living Room, Site A, Project XYZ" value="${esc(siteVal)}"></label>
       <label class="f"><span>Phone</span><input name="cphone" type="tel" inputmode="tel" value="${esc(cl.phone||"")}"></label>
       <label class="f gstonly" ${gst?"":"hidden"}><span>Client GSTIN</span><input name="cgstin" maxlength="15" style="text-transform:uppercase" value="${esc(cl.gstin||"")}"></label>
       <label class="f full"><span>Address</span><input name="caddress" value="${esc(cl.address||"")}"></label>
@@ -748,6 +753,7 @@ function docForm(kind, existing){
     <div class="legend-s">Notes</div>
     <label class="f"><textarea name="notes" placeholder="${isQ?"Scope of work, delivery time, payment terms…":"Thank you for your business."}">${esc(d?.notes ?? "")}</textarea></label>
     <datalist id="clientList">${[...clientNames().keys()].map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
+    <datalist id="clientSiteList">${(cl.name ? getClientSites(S.clients.find(x => (x.name||"").trim().toLowerCase() === (cl.name||"").trim().toLowerCase())) : []).map(s=>`<option value="${esc(s)}">`).join("")}</datalist>
     <datalist id="matList">${S.materials.map(m=>`<option value="${esc(m.name)}">`).join("")}</datalist>
     <datalist id="unitList">${UNITS.map(u=>`<option value="${u}">`).join("")}</datalist>
   </form>`;
@@ -825,10 +831,18 @@ async function saveDoc(form){
     if(cName){
       const existingCli = S.clients.find(x => (x.name||"").trim().toLowerCase() === cName.toLowerCase());
       if(!existingCli){
-        const newC = { name: cName, site: siteVal, phone: doc.client.phone||"", gstin: doc.client.gstin||"", address: doc.client.address||"", state: doc.client.state||"", notes:"", createdAt: Date.now(), updatedAt: Date.now(), ...uidMeta() };
+        const newC = { name: cName, site: siteVal, sites: siteVal ? [siteVal] : [], phone: doc.client.phone||"", gstin: doc.client.gstin||"", address: doc.client.address||"", state: doc.client.state||"", notes:"", createdAt: Date.now(), updatedAt: Date.now(), ...uidMeta() };
         const cliRef = S.db.collection("clients").doc();
         cliRef.set(newC).catch(()=>{});
         S.clients.push({ id: cliRef.id, ...newC });
+      } else if(siteVal){
+        const curSites = Array.isArray(existingCli.sites) ? [...existingCli.sites] : (existingCli.site ? [existingCli.site] : []);
+        if(!curSites.some(s => s.toLowerCase() === siteVal.toLowerCase())){
+          curSites.push(siteVal);
+          existingCli.sites = curSites;
+          existingCli.site = siteVal;
+          S.db.collection("clients").doc(existingCli.id).update({ sites: curSites, site: siteVal, updatedAt: Date.now() }).catch(()=>{});
+        }
       }
     }
     if(fromQ) await write(()=>S.db.collection("quotes").doc(fromQ.id).update({status:"accepted", invoiceId:ref.id, invoiceNo:doc.no}));
@@ -1682,21 +1696,648 @@ function dVendor(id, refresh){
   if(S.canWrite) b+=`<div class="actions" style="margin-top:18px"><button class="btn" data-act="editVendor" data-id="${id}">${svg("edit")}Edit</button><button class="btn danger" data-act="delVendor" data-id="${id}">${svg("trash")}Delete</button></div>`;
   openSheet(v.name, b, "", {kind:"detail", type:"vendor", id});
 }
+/* ---------- client ledger & multi-site maintenance ---------- */
+function getClientSites(c){
+  if(!c) return [];
+  const set = new Set();
+  if(Array.isArray(c.sites)) c.sites.forEach(s => { s = (s||"").trim(); if(s) set.add(s); });
+  if(c.site && typeof c.site === "string"){ const s = c.site.trim(); if(s) set.add(s); }
+  const cName = (c.name || "").trim().toLowerCase();
+  (S.invoices||[]).forEach(i => {
+    if((i.client?.id === c.id) || (i.client?.name && i.client.name.trim().toLowerCase() === cName)){
+      if(i.site) set.add(i.site.trim());
+      if(i.client?.site) set.add(i.client.site.trim());
+    }
+  });
+  (S.quotes||[]).forEach(q => {
+    if((q.client?.id === c.id) || (q.client?.name && q.client.name.trim().toLowerCase() === cName)){
+      if(q.site) set.add(q.site.trim());
+      if(q.client?.site) set.add(q.client.site.trim());
+    }
+  });
+  (S.txns||[]).forEach(t => {
+    if(((t.clientId === c.id) || (t.party && t.party.trim().toLowerCase() === cName)) && t.site){
+      set.add(t.site.trim());
+    }
+  });
+  return Array.from(set).filter(Boolean).sort((a,b)=>a.localeCompare(b));
+}
+
+function buildClientLedger(c, siteFilter="all", periodFilter="all", searchFilter=""){
+  if(!c) return { entries:[], allCount:0, openingBalance:0, totalDebit:0, totalCredit:0, closingBalance:0, sitesSummary:{}, allSites:[], siteFilter, periodFilter };
+  const cName = (c.name || "").trim().toLowerCase();
+  const allSites = getClientSites(c);
+
+  const invs = (S.invoices||[]).filter(i => (i.client?.id === c.id) || (i.client?.name && i.client.name.trim().toLowerCase() === cName));
+  const txns = (S.txns||[]).filter(t => (t.clientId === c.id) || (t.party && t.party.trim().toLowerCase() === cName));
+
+  const allEntries = [];
+
+  // Invoices (Debits - Work done)
+  invs.forEach(inv => {
+    const sName = (inv.site || inv.client?.site || "").trim();
+    allEntries.push({
+      id: inv.id,
+      date: inv.date || today(),
+      type: "debit",
+      src: "invoice",
+      ref: inv.no,
+      site: sName,
+      desc: `Invoice ${inv.no}${inv.items?.length ? ` (${inv.items.length} item${inv.items.length>1?'s':''})` : ''}`,
+      notes: inv.notes || "",
+      debit: +inv.total || 0,
+      credit: 0,
+      status: invStatus(inv),
+      raw: inv,
+      createdAt: inv.createdAt || 0
+    });
+
+    // Payments recorded on this invoice (Credits - Payments received)
+    (inv.payments || []).forEach((p, idx) => {
+      const pSite = (p.site || sName).trim();
+      allEntries.push({
+        id: inv.id + "_p_" + idx,
+        invId: inv.id,
+        date: p.date || inv.date || today(),
+        type: "credit",
+        src: "inv_pay",
+        ref: inv.no,
+        site: pSite,
+        desc: `Payment for ${inv.no}${p.mode ? ` (${p.mode})` : ''}`,
+        notes: p.note || "",
+        debit: 0,
+        credit: +p.amount || 0,
+        mode: p.mode,
+        raw: p,
+        createdAt: p.at || (inv.createdAt || 0) + idx + 1
+      });
+    });
+  });
+
+  // Client Direct Transactions in S.txns
+  txns.forEach(t => {
+    const isInc = t.type === "income";
+    const tSite = (t.site || "").trim();
+    allEntries.push({
+      id: t.id,
+      date: t.date || today(),
+      type: isInc ? "credit" : "debit",
+      src: "txn",
+      ref: t.note || (isInc ? "Payment" : "Refund"),
+      site: tSite,
+      desc: isInc ? `Payment received${t.mode ? ` (${t.mode})` : ''}` : `Debit / Adjustment`,
+      notes: t.note || "",
+      debit: isInc ? 0 : (+t.amount || 0),
+      credit: isInc ? (+t.amount || 0) : 0,
+      mode: t.mode,
+      raw: t,
+      createdAt: t.createdAt || 0
+    });
+  });
+
+  // Sort chronological (oldest to newest)
+  allEntries.sort((a,b) => (a.date||"").localeCompare(b.date||"") || (a.createdAt||0) - (b.createdAt||0) || (a.type==="debit"?-1:1));
+
+  // Sites summary calculation across ALL entries
+  const sitesSummary = {};
+  allSites.forEach(s => { sitesSummary[s] = { billed: 0, received: 0, due: 0, invCount: 0 }; });
+  sitesSummary["__unassigned__"] = { billed: 0, received: 0, due: 0, invCount: 0 };
+
+  allEntries.forEach(e => {
+    const key = e.site || "__unassigned__";
+    if(!sitesSummary[key]) sitesSummary[key] = { billed: 0, received: 0, due: 0, invCount: 0 };
+    if(e.type === "debit") {
+      sitesSummary[key].billed += e.debit;
+      if(e.src === "invoice") sitesSummary[key].invCount++;
+    } else {
+      sitesSummary[key].received += e.credit;
+    }
+    sitesSummary[key].due = sitesSummary[key].billed - sitesSummary[key].received;
+  });
+
+  // Apply Site Filter
+  let filtered = allEntries;
+  if(siteFilter && siteFilter !== "all"){
+    const sf = siteFilter.trim().toLowerCase();
+    filtered = filtered.filter(e => (e.site || "").trim().toLowerCase() === sf);
+  }
+
+  // Determine period date range
+  let startDate = null;
+  const now = today();
+  if(periodFilter === "this_month"){
+    startDate = now.slice(0,7) + "-01";
+  } else if(periodFilter === "last_month"){
+    startDate = shiftMonth(now.slice(0,7), -1) + "-01";
+  } else if(periodFilter === "last_90"){
+    startDate = addDays(now, -90);
+  }
+
+  // Calculate Opening Balance if period is set
+  let openingBalance = 0;
+  let periodEntries = filtered;
+  if(startDate){
+    const before = filtered.filter(e => (e.date || "") < startDate);
+    openingBalance = sum(before, e => e.debit) - sum(before, e => e.credit);
+    periodEntries = filtered.filter(e => (e.date || "") >= startDate);
+  }
+
+  // Apply search query within description / ref / note
+  if(searchFilter && searchFilter.trim()){
+    const q = searchFilter.trim().toLowerCase();
+    periodEntries = periodEntries.filter(e => (e.ref||"").toLowerCase().includes(q) || (e.desc||"").toLowerCase().includes(q) || (e.notes||"").toLowerCase().includes(q) || (e.site||"").toLowerCase().includes(q));
+  }
+
+  // Compute running balance
+  let running = openingBalance;
+  periodEntries.forEach(e => {
+    running += (e.debit - e.credit);
+    e.balance = running;
+  });
+
+  const totalDebit = sum(periodEntries, e => e.debit);
+  const totalCredit = sum(periodEntries, e => e.credit);
+  const closingBalance = running;
+
+  return {
+    entries: periodEntries,
+    allCount: filtered.length,
+    openingBalance,
+    totalDebit,
+    totalCredit,
+    closingBalance,
+    sitesSummary,
+    allSites,
+    siteFilter,
+    periodFilter
+  };
+}
+
+function clientPayForm(clientId, defaultSite=""){
+  const c = S.clients.find(x => x.id === clientId);
+  if(!c) return;
+  const sites = getClientSites(c);
+  const ledger = buildClientLedger(c);
+  const bal = Math.max(0, ledger.closingBalance);
+
+  openSheet(`Receive payment · ${esc(c.name)}`, `<form id="cliPayForm" data-form="clientPay" data-client="${clientId}">
+    <div class="fg">
+      <div class="f full" style="padding:10px 12px;background:var(--surface-2);border-radius:9px;font-size:13px;line-height:1.5">
+        <b>Client:</b> ${esc(c.name)}<br>
+        Current outstanding balance: <b class="num" style="color:var(--bad);font-size:15px">${inr(bal)}</b>
+      </div>
+      <label class="f full"><span>Payment amount (₹)</span><input name="amount" type="number" inputmode="decimal" step="any" min="0.01" required value="${bal > 0 ? bal : ""}" style="font-size:18px;font-weight:700"></label>
+      <label class="f"><span>Payment date</span><input name="date" type="date" required value="${today()}"></label>
+      <label class="f"><span>Payment mode</span><select name="mode">${MODES.map(m=>`<option ${m==="UPI"?"selected":""}>${m}</option>`).join("")}</select></label>
+      <label class="f full"><span>Site / Side allocation (Optional)</span>
+        <select name="site">
+          <option value="">General / All Sites</option>
+          ${sites.map(s => `<option value="${esc(s)}" ${s===defaultSite?"selected":""}>${esc(s)}</option>`).join("")}
+        </select>
+      </label>
+      <label class="f full"><span>Reference / UTR / Cheque no.</span><input name="ref" placeholder="e.g. UTR 402910, Cheque #019283, GPay"></label>
+      <label class="f full"><span>Note / Remarks</span><input name="note" placeholder="e.g. Monthly settlement for daily work, Advance"></label>
+      <div class="f full" style="margin-top:4px">
+        <label class="chk" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer">
+          <input type="checkbox" name="autoFifo" checked style="margin-top:3px">
+          <span><b>Auto-settle oldest unpaid invoices (FIFO)</b><br><span class="muted small">Applies payment to clear pending bills automatically and mark them paid</span></span>
+        </label>
+      </div>
+    </div>
+  </form>`, `<button class="btn" data-act="close">Cancel</button><button class="btn pri" type="submit" form="cliPayForm">Record Payment</button>`);
+}
+
+async function saveClientPay(form){
+  const clientId = form.dataset.client;
+  const c = S.clients.find(x => x.id === clientId);
+  if(!c) return;
+
+  const amount = r2(form.amount.value);
+  if(!(amount > 0)){ toast("Enter a valid amount."); return; }
+
+  const date = form.date.value || today();
+  const mode = form.mode.value;
+  const siteVal = (form.site.value || "").trim();
+  const refVal = form.ref.value.trim();
+  const noteVal = form.note.value.trim();
+  const autoFifo = form.autoFifo?.checked;
+
+  const fullNote = [refVal, noteVal].filter(Boolean).join(" · ") || "Client payment";
+  const cName = (c.name || "").trim().toLowerCase();
+
+  const ok = await write(async () => {
+    if(autoFifo){
+      let unpaid = (S.invoices||[]).filter(i => {
+        const isClient = (i.client?.id === c.id) || (i.client?.name && i.client.name.trim().toLowerCase() === cName);
+        if(!isClient) return false;
+        if(siteVal && ((i.site || i.client?.site || "").trim().toLowerCase() !== siteVal.toLowerCase())) return false;
+        const due = (+i.total||0) - paidOf(i);
+        return due > 0.01;
+      });
+
+      if(siteVal && !unpaid.length){
+        unpaid = (S.invoices||[]).filter(i => {
+          const isClient = (i.client?.id === c.id) || (i.client?.name && i.client.name.trim().toLowerCase() === cName);
+          return isClient && (((+i.total||0) - paidOf(i)) > 0.01);
+        });
+      }
+
+      unpaid.sort((a,b) => (a.date||"").localeCompare(b.date||"") || (a.createdAt||0) - (b.createdAt||0));
+
+      let rem = amount;
+      for(const inv of unpaid){
+        if(rem <= 0) break;
+        const invDue = r2((+inv.total||0) - paidOf(inv));
+        const payHere = Math.min(rem, invDue);
+        const p = {
+          amount: payHere,
+          date,
+          mode,
+          note: fullNote,
+          site: siteVal || inv.site || inv.client?.site || "",
+          at: Date.now(),
+          ...uidMeta()
+        };
+        const updatedPayments = [...(inv.payments||[]), p];
+        await S.db.collection("invoices").doc(inv.id).update({
+          payments: updatedPayments,
+          updatedAt: Date.now()
+        });
+        inv.payments = updatedPayments;
+        rem = r2(rem - payHere);
+      }
+
+      if(rem > 0){
+        const advTxn = {
+          type: "income",
+          amount: rem,
+          date,
+          mode,
+          category: "Client payment",
+          party: c.name,
+          clientId: c.id,
+          site: siteVal,
+          note: `Advance / Unallocated from ${fullNote}`,
+          files: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          ...uidMeta()
+        };
+        const ref = await S.db.collection("txns").add(advTxn);
+        S.txns.unshift({ id: ref.id, ...advTxn });
+      }
+    } else {
+      const txn = {
+        type: "income",
+        amount,
+        date,
+        mode,
+        category: "Client payment",
+        party: c.name,
+        clientId: c.id,
+        site: siteVal,
+        note: fullNote,
+        files: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        ...uidMeta()
+      };
+      const ref = await S.db.collection("txns").add(txn);
+      S.txns.unshift({ id: ref.id, ...txn });
+    }
+  }, `Payment of ${inr(amount)} recorded`);
+
+  if(ok){
+    closeSheet();
+    dClient(c.id);
+  }
+}
+
+function shareClientLedgerWhatsApp(clientId, siteFilter="all", periodFilter="all"){
+  const c = S.clients.find(x => x.id === clientId);
+  if(!c) return;
+  const ledger = buildClientLedger(c, siteFilter, periodFilter);
+  const co = S.settings?.name || "The Wooden Art";
+
+  const siteText = siteFilter && siteFilter !== "all" ? siteFilter : "All Sites";
+  const periodText = periodFilter === "this_month" ? "This Month" : (periodFilter === "last_month" ? "Last Month" : (periodFilter === "last_90" ? "Last 90 Days" : "Complete Khata"));
+
+  let msg = `*KHATA STATEMENT — ${co.toUpperCase()}*\n`;
+  msg += `Client: *${c.name}*\n`;
+  msg += `Site: *${siteText}*\n`;
+  msg += `Period: ${periodText} · Date: ${fmtDate(today())}\n`;
+  msg += `--------------------------------\n`;
+  msg += `• Total Work Billed: *${inr(ledger.totalDebit)}*\n`;
+  msg += `• Total Payment Received: *${inr(ledger.totalCredit)}*\n`;
+  msg += `• *Net Balance Due: ${inr(ledger.closingBalance)}*\n`;
+  msg += `--------------------------------\n`;
+
+  const recent = ledger.entries.slice(-8);
+  if(recent.length){
+    msg += `*Recent Entries:*\n`;
+    recent.forEach(e => {
+      const dt = fmtDate(e.date);
+      const sTag = e.site ? `[${e.site}] ` : "";
+      if(e.type === "debit"){
+        msg += `• ${dt} ${sTag}${e.ref}: +${inr(e.debit)}\n`;
+      } else {
+        msg += `• ${dt} ${sTag}Received (${e.mode||"Pay"}): -${inr(e.credit)}\n`;
+      }
+    });
+    msg += `--------------------------------\n`;
+  }
+
+  if(ledger.closingBalance > 0){
+    msg += `Please arrange payment of *${inr(ledger.closingBalance)}* at your earliest convenience.\n`;
+    if(S.settings?.upi) msg += `Pay via UPI: *${S.settings.upi}*\n`;
+  } else {
+    msg += `Account is completely clear. Thank you for your business!\n`;
+  }
+
+  const ph = (c.phone||"").replace(/\D/g,"");
+  const num = ph.length===10 ? "91"+ph : ph;
+  window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
+}
+
+async function makeClientLedgerPDF(clientId, siteFilter="all", periodFilter="all"){
+  if(!window.jspdf){ toast("PDF tool did not load. Check internet and reopen."); return; }
+  const c = S.clients.find(x => x.id === clientId);
+  if(!c) return;
+
+  toast("Generating statement PDF…");
+  const ledger = buildClientLedger(c, siteFilter, periodFilter);
+  const st = S.settings || {};
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:"mm", format:"a4"});
+  const W=210, H=297, M=13;
+  const contentWidth = W - 2*M; // 184 mm
+
+  const ORANGE = [232, 128, 42];
+  const INK = [20, 20, 20];
+  const BORDER = [35, 35, 35];
+  const MUT = [90, 90, 90];
+  const TH_BG = [238, 238, 238];
+  const pdfSafe = t => String(t||"").replace(/[×]/g,"x").replace(/[–—]/g,"-").replace(/[^\x20-\x7E\n]/g,"");
+
+  let y = 10;
+
+  let logo = null;
+  if(st.logoId) logo = await loadImg(st.logoId);
+  if(!logo) logo = await loadImg("/icons/the_wooden_art_logo.png");
+
+  if(logo && logo.w && logo.h){
+    const maxH = 16, maxW = 55;
+    const ratio = logo.w / logo.h;
+    let lh = maxH, lw = lh * ratio;
+    if(lw > maxW){ lw = maxW; lh = lw / ratio; }
+    doc.addImage(logo.data, logo.fmt, M, y, lw, lh);
+  } else {
+    doc.setFont("helvetica","bold"); doc.setFontSize(14); doc.setTextColor(...INK);
+    doc.text((st.name || "THE WOODEN ART").toUpperCase(), M, y + 7);
+  }
+
+  doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(...MUT);
+  const rightTexts = [
+    st.name || "The Wooden Art",
+    st.phone ? "Ph: " + pdfSafe(st.phone) : "",
+    st.gstin ? "GSTIN: " + pdfSafe(st.gstin) : "",
+    st.state ? "State: " + pdfSafe(st.state) : ""
+  ].filter(Boolean);
+  let ry = y + 2;
+  rightTexts.forEach(txt => { doc.text(txt, W - M, ry, {align:"right"}); ry += 3.8; });
+
+  y = 28;
+  doc.setFillColor(...ORANGE);
+  doc.rect(M, y, contentWidth, 3, "F");
+  y += 5.5;
+
+  doc.setFont("helvetica","bold"); doc.setFontSize(12); doc.setTextColor(...INK);
+  doc.text("CLIENT KHATA STATEMENT", W/2, y + 4, {align:"center"});
+  y += 7;
+
+  const siteText = siteFilter && siteFilter !== "all" ? siteFilter : "All Sites";
+  const periodText = periodFilter === "this_month" ? "This Month" : (periodFilter === "last_month" ? "Last Month" : (periodFilter === "last_90" ? "Last 90 Days" : "Complete Statement"));
+
+  doc.setDrawColor(...BORDER); doc.setLineWidth(0.3);
+  doc.rect(M, y, contentWidth, 18, "S");
+  doc.line(M + 100, y, M + 100, y + 18);
+
+  doc.setFontSize(8.5); doc.setFont("helvetica","bold"); doc.setTextColor(...INK);
+  doc.text("STATEMENT FOR:", M + 3, y + 4.5);
+  doc.setFont("helvetica","normal");
+  doc.text(pdfSafe(c.name), M + 3, y + 8.5);
+  doc.text(pdfSafe([c.phone, c.gstin ? "GSTIN: "+c.gstin : ""].filter(Boolean).join("  ·  ")), M + 3, y + 12.5);
+  if(c.address) doc.text(pdfSafe(c.address).slice(0, 50), M + 3, y + 16.5);
+
+  doc.setFont("helvetica","bold");
+  doc.text("STATEMENT DETAILS:", M + 103, y + 4.5);
+  doc.setFont("helvetica","normal");
+  doc.text("Date: " + fmtDate(today()), M + 103, y + 8.5);
+  doc.text("Site: " + pdfSafe(siteText), M + 103, y + 12.5);
+  doc.text("Period: " + pdfSafe(periodText), M + 103, y + 16.5);
+
+  y += 21;
+
+  const cw = contentWidth / 3;
+  doc.rect(M, y, contentWidth, 12, "S");
+  doc.line(M + cw, y, M + cw, y + 12);
+  doc.line(M + 2*cw, y, M + 2*cw, y + 12);
+
+  doc.setFontSize(7.5); doc.setFont("helvetica","bold"); doc.setTextColor(...MUT);
+  doc.text("TOTAL BILLED", M + cw/2, y + 4, {align:"center"});
+  doc.text("TOTAL RECEIVED", M + cw + cw/2, y + 4, {align:"center"});
+  doc.text("BALANCE DUE", M + 2*cw + cw/2, y + 4, {align:"center"});
+
+  doc.setFontSize(10.5); doc.setTextColor(...INK);
+  doc.text("Rs. " + pdfAmt(ledger.totalDebit), M + cw/2, y + 9.5, {align:"center"});
+  doc.setTextColor(22, 126, 63);
+  doc.text("Rs. " + pdfAmt(ledger.totalCredit), M + cw + cw/2, y + 9.5, {align:"center"});
+  doc.setTextColor(ledger.closingBalance > 0 ? 190 : 22, ledger.closingBalance > 0 ? 40 : 126, ledger.closingBalance > 0 ? 29 : 63);
+  doc.text("Rs. " + pdfAmt(ledger.closingBalance), M + 2*cw + cw/2, y + 9.5, {align:"center"});
+
+  y += 16;
+
+  const cols = [
+    { name: "Date", w: 22, align: "left" },
+    { name: "Site", w: 34, align: "left" },
+    { name: "Particulars / Description", w: 60, align: "left" },
+    { name: "Debit (Rs)", w: 22, align: "right" },
+    { name: "Credit (Rs)", w: 22, align: "right" },
+    { name: "Balance (Rs)", w: 24, align: "right" }
+  ];
+
+  function drawTableHeader(curY){
+    doc.setFillColor(...TH_BG);
+    doc.rect(M, curY, contentWidth, 7, "F");
+    doc.rect(M, curY, contentWidth, 7, "S");
+    doc.setFont("helvetica","bold"); doc.setFontSize(7.5); doc.setTextColor(...INK);
+    let x = M;
+    cols.forEach(col => {
+      const tx = col.align === "right" ? x + col.w - 2 : x + 2;
+      doc.text(col.name, tx, curY + 4.8, {align: col.align});
+      x += col.w;
+    });
+  }
+
+  drawTableHeader(y);
+  y += 7;
+
+  if(ledger.openingBalance !== 0){
+    doc.setFillColor(245, 245, 245);
+    doc.rect(M, y, contentWidth, 6, "F");
+    doc.rect(M, y, contentWidth, 6, "S");
+    doc.setFont("helvetica","italic"); doc.setFontSize(8); doc.setTextColor(...MUT);
+    doc.text("Opening Balance", M + 2, y + 4.2);
+    doc.setFont("helvetica","bold"); doc.setTextColor(...INK);
+    doc.text(pdfAmt(ledger.openingBalance), M + contentWidth - 2, y + 4.2, {align:"right"});
+    y += 6;
+  }
+
+  doc.setFontSize(8);
+  ledger.entries.forEach(e => {
+    if(y > H - 30){
+      doc.addPage();
+      y = 15;
+      drawTableHeader(y);
+      y += 7;
+    }
+
+    doc.rect(M, y, contentWidth, 6.5, "S");
+    doc.setFont("helvetica","normal"); doc.setTextColor(...INK);
+
+    let x = M;
+    doc.text(fmtDate(e.date), x + 2, y + 4.4);
+    x += cols[0].w;
+
+    doc.text(pdfSafe(e.site || "—").slice(0, 18), x + 2, y + 4.4);
+    x += cols[1].w;
+
+    doc.text(pdfSafe(e.desc || e.ref || "—").slice(0, 32), x + 2, y + 4.4);
+    x += cols[2].w;
+
+    if(e.debit > 0){
+      doc.setFont("helvetica","bold");
+      doc.text(pdfAmt(e.debit), x + cols[3].w - 2, y + 4.4, {align:"right"});
+    } else {
+      doc.text("—", x + cols[3].w - 2, y + 4.4, {align:"right"});
+    }
+    x += cols[3].w;
+
+    if(e.credit > 0){
+      doc.setFont("helvetica","bold"); doc.setTextColor(22, 126, 63);
+      doc.text(pdfAmt(e.credit), x + cols[4].w - 2, y + 4.4, {align:"right"});
+      doc.setTextColor(...INK);
+    } else {
+      doc.text("—", x + cols[4].w - 2, y + 4.4, {align:"right"});
+    }
+    x += cols[4].w;
+
+    doc.setFont("helvetica","bold");
+    doc.text(pdfAmt(e.balance), x + cols[5].w - 2, y + 4.4, {align:"right"});
+
+    y += 6.5;
+  });
+
+  if(y > H - 25){ doc.addPage(); y = 15; }
+  doc.setFillColor(...TH_BG);
+  doc.rect(M, y, contentWidth, 7, "F");
+  doc.rect(M, y, contentWidth, 7, "S");
+  doc.setFont("helvetica","bold"); doc.setFontSize(8.5); doc.setTextColor(...INK);
+  doc.text("NET CLOSING BALANCE", M + 2, y + 4.8);
+  doc.text("Rs. " + pdfAmt(ledger.totalDebit), M + cols[0].w + cols[1].w + cols[2].w + cols[3].w - 2, y + 4.8, {align:"right"});
+  doc.setTextColor(22, 126, 63);
+  doc.text("Rs. " + pdfAmt(ledger.totalCredit), M + cols[0].w + cols[1].w + cols[2].w + cols[3].w + cols[4].w - 2, y + 4.8, {align:"right"});
+  doc.setTextColor(ledger.closingBalance > 0 ? 190 : 22, ledger.closingBalance > 0 ? 40 : 126, ledger.closingBalance > 0 ? 29 : 63);
+  doc.text("Rs. " + pdfAmt(ledger.closingBalance), M + contentWidth - 2, y + 4.8, {align:"right"});
+  y += 11;
+
+  if(st.bankName || st.upi){
+    if(y > H - 25){ doc.addPage(); y = 15; }
+    doc.setFontSize(7.5); doc.setFont("helvetica","normal"); doc.setTextColor(...MUT);
+    doc.text("Bank & Payment Details:", M, y);
+    y += 3.5;
+    if(st.bankName) doc.text(`Bank: ${st.bankName} | A/C: ${st.bankAccount||""} | IFSC: ${st.bankIfsc||""}`, M, y);
+    if(st.upi) doc.text(`UPI ID: ${st.upi}`, M, y + (st.bankName ? 3.5 : 0));
+  }
+
+  const cleanName = (c.name||"client").replace(/[^\w]+/g,"_").slice(0,30);
+  const pdfBlob = doc.output("blob");
+  const filename = `Statement_${cleanName}_${today()}.pdf`;
+
+  if(S.dl && S.dl.save){
+    await S.dl.save({filename, data: pdfBlob});
+  } else {
+    const url = URL.createObjectURL(pdfBlob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+  toast("Statement PDF downloaded");
+}
+
+function exportClientLedgerCSV(clientId, siteFilter="all", periodFilter="all"){
+  const c = S.clients.find(x => x.id === clientId);
+  if(!c) return;
+  const ledger = buildClientLedger(c, siteFilter, periodFilter);
+  const rows = [
+    ["Date", "Site", "Type", "Ref", "Description", "Debit (Work Billed)", "Credit (Received)", "Running Balance"]
+  ];
+  if(ledger.openingBalance !== 0){
+    rows.push(["", "", "Opening Balance", "", "Opening Balance", "", "", ledger.openingBalance]);
+  }
+  ledger.entries.forEach(e => {
+    rows.push([
+      e.date,
+      e.site || "",
+      e.type === "debit" ? "Debit (Work)" : "Credit (Payment)",
+      e.ref || "",
+      e.desc || "",
+      e.debit || 0,
+      e.credit || 0,
+      e.balance
+    ]);
+  });
+  rows.push(["", "", "Closing Balance", "", "Net Total", ledger.totalDebit, ledger.totalCredit, ledger.closingBalance]);
+  const cleanName = (c.name||"client").replace(/[^\w]+/g,"_").slice(0,30);
+  saveText(`Statement_${cleanName}_${today()}.csv`, csv(rows));
+}
+
 function clientForm(c, after){
   c=c||{}; S._afterClient = after||null;
+  const sites = getClientSites(c);
+  const sitesStr = (c.sites && Array.isArray(c.sites)) ? c.sites.join(", ") : (c.site || "");
   openSheet(c.id?"Edit client":"Add client", `<form id="cliForm" data-form="cli" data-id="${c.id||""}"><div class="fg">
-    <label class="f full"><span>Client / Party name</span><input name="name" required value="${esc(c.name||"")}"></label>
-    <label class="f full"><span>Site / Side name</span><input name="site" value="${esc(c.site||"")}" placeholder="e.g. Living Room, Site A, Project XYZ"></label>
+    <label class="f full"><span>Client / Party name</span><input name="name" required value="${esc(c.name||"")}" placeholder="e.g. Ar. Rajesh Sharma, Pappu Mistry"></label>
+    <label class="f full"><span>Primary / Default Site name</span><input name="site" value="${esc(c.site||"")}" placeholder="e.g. Villa 101, Living Room"></label>
+    <label class="f full"><span>All Sites / Sides (comma-separated)</span><input name="sites" value="${esc(sitesStr)}" placeholder="e.g. Villa 101, Flat 402, Skyline Tower"><span class="small muted">Clients like Architects & Mistries usually have multiple active sites</span></label>
     <label class="f"><span>Phone</span><input name="phone" type="tel" inputmode="tel" value="${esc(c.phone||"")}"></label>
     <label class="f"><span>GSTIN</span><input name="gstin" maxlength="15" style="text-transform:uppercase" value="${esc(c.gstin||"")}"></label>
     <label class="f full"><span>Address</span><input name="address" value="${esc(c.address||"")}"></label>
     <label class="f full"><span>State</span><select name="state"><option value="">Select state</option>${STATES.map(s=>`<option ${s===(c.state||S.settings.state)?"selected":""}>${s}</option>`).join("")}</select></label>
-    <label class="f full"><span>Notes</span><input name="notes" value="${esc(c.notes||"")}" placeholder="e.g. Regular client, Interior designer"></label>
+    <label class="f full"><span>Notes / Profession</span><input name="notes" value="${esc(c.notes||"")}" placeholder="e.g. Architect, Interior Designer, Contractor, Mistry"></label>
   </div></form>`, `<button class="btn" data-act="close">Cancel</button><button class="btn pri" type="submit" form="cliForm">Save</button>`);
 }
+
 async function saveCli(form){
   const id=form.dataset.id;
-  const c={ name:form.name.value.trim(), site:form.site?form.site.value.trim():"", phone:form.phone.value.trim(), gstin:form.gstin.value.trim().toUpperCase(), address:form.address.value.trim(), state:form.state.value, notes:form.notes.value.trim(), updatedAt:Date.now() };
+  const rawSites = (form.sites ? form.sites.value : "").split(",").map(s=>s.trim()).filter(Boolean);
+  const primarySite = form.site ? form.site.value.trim() : "";
+  if(primarySite && !rawSites.some(s => s.toLowerCase() === primarySite.toLowerCase())) {
+    rawSites.unshift(primarySite);
+  }
+  const sites = Array.from(new Set(rawSites));
+
+  const c={
+    name:form.name.value.trim(),
+    site: primarySite || (sites[0] || ""),
+    sites,
+    phone:form.phone.value.trim(),
+    gstin:form.gstin.value.trim().toUpperCase(),
+    address:form.address.value.trim(),
+    state:form.state.value,
+    notes:form.notes.value.trim(),
+    updatedAt:Date.now()
+  };
   if(!c.name){ toast("Enter a client name."); return; }
   let ref;
   const ok = await write(async()=>{
@@ -1705,28 +2346,241 @@ async function saveCli(form){
   }, "Client saved");
   if(!ok) return;
   if(!id && !S.clients.some(x=>x.id===ref.id)) S.clients.push({id:ref.id, ...c});
+  else if(id){
+    const idx = S.clients.findIndex(x=>x.id===id);
+    if(idx !== -1) Object.assign(S.clients[idx], c);
+  }
   if(S._afterClient){ const f=S._afterClient; S._afterClient=null; f(ref.id); }
   else { closeSheet(); dClient(ref.id); }
 }
+
 function dClient(id, refresh){
   const c=S.clients.find(x=>x.id===id); if(!c){ missing("client",id,refresh); return; }
-  const invs=S.invoices.filter(i=>(i.client?.id===id) || (i.client?.name && i.client.name.trim().toLowerCase()===(c.name||"").trim().toLowerCase())).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
-  const quotes=S.quotes.filter(q=>(q.client?.id===id) || (q.client?.name && q.client.name.trim().toLowerCase()===(c.name||"").trim().toLowerCase())).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
-  const billed=sum(invs, i=>+i.total||0), received=sum(invs, paidOf), due=billed-received;
+  const cName = (c.name || "").trim().toLowerCase();
+
+  S.cliState = S.cliState || {};
+  const cs = (S.cliState[id] = S.cliState[id] || { tab: "ledger", site: "all", period: "all", q: "" });
+
+  const allSites = getClientSites(c);
+  const ledger = buildClientLedger(c, cs.site, cs.period, cs.q);
+
+  const invs = S.invoices.filter(i=>(i.client?.id===id) || (i.client?.name && i.client.name.trim().toLowerCase()===cName)).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+  const quotes = S.quotes.filter(q=>(q.client?.id===id) || (q.client?.name && q.client.name.trim().toLowerCase()===cName)).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+
   const ph = (c.phone||"").replace(/\D/g,""); const num = ph.length===10 ? "91"+ph : ph;
-  let b=`<div class="tiles"><div class="tile"><div class="k">Billed</div><div class="v num">${inrShort(billed)}</div></div><div class="tile good"><div class="k">Received</div><div class="v num">${inrShort(received)}</div></div><div class="tile ${due>0?"bad":"good"}"><div class="k">Due</div><div class="v num">${inrShort(Math.max(0,due))}</div></div></div>
-  <dl class="dl" style="margin-top:12px">
-    ${c.site?`<dt>Site / Side</dt><dd style="font-weight:600;color:var(--brand)">${esc(c.site)}</dd>`:""}
-    ${c.phone?`<dt>Phone</dt><dd style="display:flex;align-items:center;gap:10px">${esc(c.phone)}<a href="tel:${esc(c.phone)}" class="btn sm" style="padding:2px 8px">Call</a><a href="https://wa.me/${num}" target="_blank" rel="noopener" class="btn sm" style="padding:2px 8px">${svg("wa",1.8)} WhatsApp</a></dd>`:""}
-    ${c.gstin?`<dt>GSTIN</dt><dd class="mono">${esc(c.gstin)}</dd>`:""}
-    ${c.state?`<dt>State</dt><dd>${esc(c.state)}</dd>`:""}
-    ${c.address?`<dt>Address</dt><dd>${esc(c.address)}</dd>`:""}
-    ${c.notes?`<dt>Notes</dt><dd>${esc(c.notes)}</dd>`:""}
-  </dl>`;
-  if(S.canWrite) b+=`<div class="actions"><button class="btn pri" data-act="newInvoiceForClient" data-id="${id}">${svg("plus")}New Invoice</button><button class="btn" data-act="newQuoteForClient" data-id="${id}">${svg("plus")}New Quotation</button></div>`;
-  b+=`<div class="legend-s">Invoices (${invs.length})</div>` + (invs.length?`<div class="list">${invs.map(i=>{const st=invStatus(i); const sSite = i.site || i.client?.site; return `<button class="row" data-act="openInvoice" data-id="${i.id}"><div class="av n">${svg("doc")}</div><div class="main"><div class="t"><span class="mono">${esc(i.no)}</span></div><div class="s">${fmtDate(i.date)}${sSite ? ` · ${esc(sSite)}` : ""}${i.gstMode==="gst"?" · GST":""}</div></div><div class="amt"><b>${inr(i.total)}</b><span class="chip ${st}">${st}</span></div></button>`;}).join("")}</div>`:`<p class="small muted">No invoices for this client yet.</p>`);
-  if(quotes.length) b+=`<div class="legend-s">Quotations (${quotes.length})</div><div class="list">${quotes.map(q=>{const st=q.status||"sent"; const sSite = q.site || q.client?.site; return `<button class="row" data-act="openQuote" data-id="${q.id}"><div class="av n">${svg("quote")}</div><div class="main"><div class="t"><span class="mono">${esc(q.no)}</span></div><div class="s">${fmtDate(q.date)}${sSite ? ` · ${esc(sSite)}` : ""}</div></div><div class="amt"><b>${inr(q.total)}</b><span class="chip ${st}">${st}</span></div></button>`;}).join("")}</div>`;
-  if(S.canWrite) b+=`<div class="actions" style="margin-top:18px"><button class="btn" data-act="editClient" data-id="${id}">${svg("edit")}Edit</button><button class="btn danger" data-act="delClient" data-id="${id}">${svg("trash")}Delete</button></div>`;
+  const isDue = ledger.closingBalance > 0.01;
+
+  let b = `
+  <div class="cli-header-card">
+    <div class="cli-header-top">
+      <div>
+        <h3 class="cli-name-title">${esc(c.name)} ${c.notes ? `<span class="chip" style="font-size:11px;font-weight:600">${esc(c.notes)}</span>` : ""}</h3>
+        <div class="small muted" style="margin-top:3px">${esc([c.gstin && ("GSTIN: " + c.gstin), c.state, c.address].filter(Boolean).join(" · ")||"No address added")}</div>
+      </div>
+      <div class="cli-contact-links">
+        ${c.phone ? `<a href="tel:${esc(c.phone)}" class="btn sm">${svg("wa",1.8)} Call</a><a href="https://wa.me/${num}" target="_blank" rel="noopener" class="btn sm">${svg("wa",1.8)} WhatsApp</a>` : ""}
+      </div>
+    </div>
+    ${allSites.length ? `
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px">
+        <span class="small muted">Sites (${allSites.length}):</span>
+        ${allSites.map(s => `<span class="chip-site" style="cursor:pointer" data-act="filterToSite" data-id="${id}" data-site="${esc(s)}">${esc(s)}</span>`).join("")}
+      </div>
+    ` : ""}
+  </div>
+
+  <div class="cli-stat-grid">
+    <div class="cli-stat-card">
+      <div class="cli-stat-k">Total Billed</div>
+      <div class="cli-stat-v">${inrShort(ledger.totalDebit)}</div>
+      <div class="cli-stat-sub">${cs.site!=="all" ? esc(cs.site) : "All sites"} · ${ledger.entries.filter(e=>e.type==='debit').length} jobs</div>
+    </div>
+    <div class="cli-stat-card">
+      <div class="cli-stat-k">Total Received</div>
+      <div class="cli-stat-v" style="color:var(--good)">${inrShort(ledger.totalCredit)}</div>
+      <div class="cli-stat-sub">${ledger.entries.filter(e=>e.type==='credit').length} payment${ledger.entries.filter(e=>e.type==='credit').length===1?"":"s"}</div>
+    </div>
+    <div class="cli-stat-card ${isDue ? 'due-card' : 'clear-card'}">
+      <div class="cli-stat-k">${isDue ? 'Balance Due' : (ledger.closingBalance < -0.01 ? 'Advance Balance' : 'Account Balance')}</div>
+      <div class="cli-stat-v" style="color:${isDue ? 'var(--bad)' : 'var(--good)'}">${inr(Math.abs(ledger.closingBalance))}</div>
+      <div class="cli-stat-sub" style="color:${isDue ? 'var(--bad)' : 'var(--good)'}">${isDue ? "Pending from client" : (ledger.closingBalance < -0.01 ? "Advance with workshop" : "Clear")}</div>
+    </div>
+  </div>
+
+  <div class="cli-quick-acts">
+    ${S.canWrite ? `<button class="btn pri" data-act="clientPay" data-id="${id}" data-site="${esc(cs.site!=="all"?cs.site:"")}">${svg("down")}Receive Payment</button>` : ""}
+    ${S.canWrite ? `<button class="btn" data-act="newInvoiceForClient" data-id="${id}" data-site="${esc(cs.site!=="all"?cs.site:"")}">${svg("plus")}New Invoice</button>` : ""}
+    <button class="btn" data-act="waClientLedger" data-id="${id}" data-site="${esc(cs.site)}" data-period="${esc(cs.period)}">${svg("wa")}Share Statement</button>
+    <button class="btn" data-act="pdfClientLedger" data-id="${id}" data-site="${esc(cs.site)}" data-period="${esc(cs.period)}">${svg("dl")}PDF Statement</button>
+    <button class="btn sm" data-act="exportClientLedger" data-id="${id}" data-site="${esc(cs.site)}" data-period="${esc(cs.period)}">${svg("dl")}CSV</button>
+  </div>
+
+  <div class="seg" role="group" style="margin-bottom:12px">
+    <button data-act="cliTab" data-id="${id}" data-tab="ledger" aria-pressed="${cs.tab==='ledger'}">Khata Ledger</button>
+    <button data-act="cliTab" data-id="${id}" data-tab="sites" aria-pressed="${cs.tab==='sites'}">Sites (${allSites.length})</button>
+    <button data-act="cliTab" data-id="${id}" data-tab="invoices" aria-pressed="${cs.tab==='invoices'}">Invoices (${invs.length})</button>
+    <button data-act="cliTab" data-id="${id}" data-tab="quotes" aria-pressed="${cs.tab==='quotes'}">Quotations (${quotes.length})</button>
+    <button data-act="cliTab" data-id="${id}" data-tab="profile" aria-pressed="${cs.tab==='profile'}">Profile</button>
+  </div>
+  `;
+
+  if(cs.tab === "ledger"){
+    b += `
+    <div class="cli-toolbar">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted)">
+        Site:
+        <select class="cli-filter-select" data-act="cliSiteFilter" data-id="${id}">
+          <option value="all" ${cs.site==="all"?"selected":""}>All Sites (${allSites.length})</option>
+          ${allSites.map(s => {
+            const st = ledger.sitesSummary[s] || {};
+            return `<option value="${esc(s)}" ${cs.site===s?"selected":""}>${esc(s)} (${st.invCount||0} inv · ${inr(st.due||0)} due)</option>`;
+          }).join("")}
+        </select>
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted)">
+        Period:
+        <select class="cli-filter-select" data-act="cliPeriodFilter" data-id="${id}">
+          <option value="all" ${cs.period==="all"?"selected":""}>All Time</option>
+          <option value="this_month" ${cs.period==="this_month"?"selected":""}>This Month</option>
+          <option value="last_month" ${cs.period==="last_month"?"selected":""}>Last Month</option>
+          <option value="last_90" ${cs.period==="last_90"?"selected":""}>Last 90 Days</option>
+        </select>
+      </label>
+      ${cs.site!=="all" || cs.period!=="all" ? `<button class="btn sm" data-act="filterToSite" data-id="${id}" data-site="all" style="padding:4px 8px">Clear filters</button>` : ""}
+    </div>
+    `;
+
+    if(!ledger.entries.length){
+      b += `<div class="card" style="text-align:center;padding:26px 14px;color:var(--muted)">
+        <p style="margin:0 0 10px;font-size:14px">No work or payment entries match this selection.</p>
+        <button class="btn sm pri" data-act="newInvoiceForClient" data-id="${id}" data-site="${esc(cs.site!=="all"?cs.site:"")}">+ New Invoice</button>
+        <button class="btn sm" data-act="clientPay" data-id="${id}" data-site="${esc(cs.site!=="all"?cs.site:"")}" style="margin-left:6px">+ Receive Payment</button>
+      </div>`;
+    } else {
+      b += `
+      <div class="cli-tbl-wrap">
+        <table class="cli-tbl">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Site / Side</th>
+              <th>Particulars</th>
+              <th class="r">Debit (Work)</th>
+              <th class="r">Credit (Paid)</th>
+              <th class="r">Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${ledger.openingBalance !== 0 ? `
+              <tr class="row-opening">
+                <td>${fmtDate(today())}</td>
+                <td>—</td>
+                <td><i>Opening Balance (${cs.period})</i></td>
+                <td class="r">—</td>
+                <td class="r">—</td>
+                <td class="amt-bal">${inr(ledger.openingBalance)}</td>
+              </tr>
+            ` : ""}
+            ${ledger.entries.map(e => {
+              const isDebit = e.type === "debit";
+              const rowAct = e.src === "invoice" ? `data-act="openInvoice" data-id="${e.id}" style="cursor:pointer"` :
+                             (e.src === "inv_pay" ? `data-act="openInvoice" data-id="${e.invId}" style="cursor:pointer"` :
+                             (e.src === "txn" ? `data-act="openTxn" data-id="${e.id}" style="cursor:pointer"` : ""));
+              const balClass = e.balance > 0 ? "bal-pos" : (e.balance < 0 ? "bal-adv" : "bal-zero");
+              return `
+                <tr class="${isDebit ? "row-debit" : "row-credit"}" ${rowAct}>
+                  <td>${fmtDate(e.date)}</td>
+                  <td>${e.site ? `<span class="chip-site">${esc(e.site)}</span>` : `<span class="muted">—</span>`}</td>
+                  <td>
+                    <div style="font-weight:600;color:var(--ink)">${esc(e.desc)}</div>
+                    ${e.notes ? `<div class="small muted">${esc(e.notes)}</div>` : ""}
+                  </td>
+                  <td class="amt-debit">${e.debit > 0 ? inr(e.debit) : '<span class="muted">—</span>'}</td>
+                  <td class="amt-credit">${e.credit > 0 ? inr(e.credit) : '<span class="muted">—</span>'}</td>
+                  <td class="amt-bal ${balClass}">${inr(e.balance)}</td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+          <tfoot>
+            <tr style="background:var(--surface-2);font-weight:700">
+              <td colspan="3"><b>Net Total (${ledger.entries.length} entr${ledger.entries.length===1?"y":"ies"})</b></td>
+              <td class="amt-debit">${inr(ledger.totalDebit)}</td>
+              <td class="amt-credit">${inr(ledger.totalCredit)}</td>
+              <td class="amt-bal ${ledger.closingBalance>0?"bal-pos":"bal-zero"}">${inr(ledger.closingBalance)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p class="small muted" style="margin:8px 0 0">💡 Tap on any invoice or payment row to view its details or receipt.</p>
+      `;
+    }
+  } else if(cs.tab === "sites"){
+    b += `
+    <div class="card" style="margin-bottom:12px;padding:12px">
+      <div style="font-weight:700;font-size:14px;margin-bottom:8px">Register new site for ${esc(c.name)}</div>
+      <div style="display:flex;gap:8px">
+        <input id="addSiteInput_${id}" placeholder="e.g. Bungalow 402, Sharma Residence" style="flex:1">
+        <button class="btn pri sm" data-act="addClientSite" data-id="${id}">+ Add Site</button>
+      </div>
+      <p class="small muted" style="margin:6px 0 0">Added sites will automatically appear in suggestions whenever you make an invoice or quote.</p>
+    </div>
+    `;
+
+    if(!allSites.length){
+      b += `<p class="muted">No sites registered yet. Add a site above, or create an invoice with a site name.</p>`;
+    } else {
+      b += `<div class="cli-site-list">${allSites.map(s => {
+        const st = ledger.sitesSummary[s] || { billed: 0, received: 0, due: 0, invCount: 0 };
+        const isSiteDue = st.due > 0.01;
+        return `
+        <div class="cli-site-card">
+          <div class="cli-site-hd">
+            <div class="cli-site-name"><span class="chip-site" style="font-size:13px">${esc(s)}</span></div>
+            <span class="chip ${isSiteDue ? 'overdue' : 'ok'}">${isSiteDue ? inr(st.due) + ' due' : 'clear'}</span>
+          </div>
+          <div class="cli-site-metrics">
+            <div><span class="muted">Billed:</span> <b>${inr(st.billed)}</b></div>
+            <div><span class="muted">Received:</span> <b style="color:var(--good)">${inr(st.received)}</b></div>
+            <div><span class="muted">Invoices:</span> <b>${st.invCount}</b></div>
+          </div>
+          <div class="cli-site-actions">
+            <button class="btn sm" data-act="filterToSite" data-id="${id}" data-site="${esc(s)}">View Site Ledger</button>
+            ${S.canWrite ? `<button class="btn sm pri" data-act="newInvoiceForClient" data-id="${id}" data-site="${esc(s)}">+ Invoice for Site</button>` : ""}
+            ${S.canWrite && isSiteDue ? `<button class="btn sm" data-act="clientPay" data-id="${id}" data-site="${esc(s)}">Receive Site Pay</button>` : ""}
+          </div>
+        </div>
+        `;
+      }).join("")}</div>`;
+    }
+  } else if(cs.tab === "invoices"){
+    const filteredInvs = cs.site && cs.site !== "all" ? invs.filter(i => (i.site||i.client?.site||"").trim().toLowerCase() === cs.site.toLowerCase()) : invs;
+    b += filteredInvs.length ? `<div class="list">${filteredInvs.map(i=>{
+      const st=invStatus(i);
+      const sSite = i.site || i.client?.site;
+      return `<button class="row" data-act="openInvoice" data-id="${i.id}"><div class="av n">${svg("doc")}</div><div class="main"><div class="t"><span class="mono">${esc(i.no)}</span>${sSite ? ` <span class="chip-site">${esc(sSite)}</span>` : ""}</div><div class="s">${fmtDate(i.date)}${i.gstMode==="gst"?" · GST":""}</div></div><div class="amt"><b>${inr(i.total)}</b><span class="chip ${st}">${st}</span></div></button>`;
+    }).join("")}</div>` : `<p class="small muted">No invoices found for this client ${cs.site!=="all"?`on site “${esc(cs.site)}”`:""}.</p>`;
+  } else if(cs.tab === "quotes"){
+    b += quotes.length ? `<div class="list">${quotes.map(q=>{
+      const st=q.status||"sent";
+      const sSite = q.site || q.client?.site;
+      return `<button class="row" data-act="openQuote" data-id="${q.id}"><div class="av n">${svg("quote")}</div><div class="main"><div class="t"><span class="mono">${esc(q.no)}</span>${sSite ? ` <span class="chip-site">${esc(sSite)}</span>` : ""}</div><div class="s">${fmtDate(q.date)}</div></div><div class="amt"><b>${inr(q.total)}</b><span class="chip ${st}">${st}</span></div></button>`;
+    }).join("")}</div>` : `<p class="small muted">No quotations for this client yet.</p>`;
+  } else if(cs.tab === "profile"){
+    b += `
+    <dl class="dl" style="margin-top:12px">
+      ${c.site?`<dt>Primary Site</dt><dd style="font-weight:600;color:var(--brand)">${esc(c.site)}</dd>`:""}
+      ${allSites.length?`<dt>All Sites</dt><dd>${esc(allSites.join(", "))}</dd>`:""}
+      ${c.phone?`<dt>Phone</dt><dd>${esc(c.phone)}</dd>`:""}
+      ${c.gstin?`<dt>GSTIN</dt><dd class="mono">${esc(c.gstin)}</dd>`:""}
+      ${c.state?`<dt>State</dt><dd>${esc(c.state)}</dd>`:""}
+      ${c.address?`<dt>Address</dt><dd>${esc(c.address)}</dd>`:""}
+      ${c.notes?`<dt>Notes</dt><dd>${esc(c.notes)}</dd>`:""}
+    </dl>
+    ${S.canWrite ? `<div class="actions" style="margin-top:18px"><button class="btn" data-act="editClient" data-id="${id}">${svg("edit")}Edit Client</button><button class="btn danger" data-act="delClient" data-id="${id}">${svg("trash")}Delete Client</button></div>` : ""}
+    `;
+  }
+
   openSheet(c.name, b, "", {kind:"detail", type:"client", id});
 }
 function billForm(b, vendorId){
@@ -2232,12 +3086,59 @@ document.addEventListener("click", async e => {
     }
     case "newInvoiceForClient": {
       const c = S.clients.find(x=>x.id===id);
-      if(c){ docForm("invoice"); fillDocForm({site:c.site, client:{name:c.name, site:c.site, phone:c.phone, gstin:c.gstin, address:c.address, state:c.state}}); }
+      const sitePref = el.dataset.site || c?.site || "";
+      if(c){ docForm("invoice"); fillDocForm({site:sitePref, client:{name:c.name, site:sitePref, phone:c.phone, gstin:c.gstin, address:c.address, state:c.state}}); }
       break;
     }
     case "newQuoteForClient": {
       const c = S.clients.find(x=>x.id===id);
-      if(c){ docForm("quote"); fillDocForm({site:c.site, client:{name:c.name, site:c.site, phone:c.phone, gstin:c.gstin, address:c.address, state:c.state}}); }
+      const sitePref = el.dataset.site || c?.site || "";
+      if(c){ docForm("quote"); fillDocForm({site:sitePref, client:{name:c.name, site:sitePref, phone:c.phone, gstin:c.gstin, address:c.address, state:c.state}}); }
+      break;
+    }
+    case "cliTab": {
+      const cId = el.dataset.id;
+      if(cId){
+        S.cliState = S.cliState || {};
+        S.cliState[cId] = S.cliState[cId] || {};
+        S.cliState[cId].tab = el.dataset.tab;
+        dClient(cId, true);
+      }
+      break;
+    }
+    case "filterToSite": {
+      const cId = el.dataset.id;
+      const site = el.dataset.site || "all";
+      if(cId){
+        S.cliState = S.cliState || {};
+        S.cliState[cId] = S.cliState[cId] || {};
+        S.cliState[cId].site = site;
+        S.cliState[cId].tab = "ledger";
+        dClient(cId, true);
+      }
+      break;
+    }
+    case "clientPay": clientPayForm(id, el.dataset.site||""); break;
+    case "waClientLedger": shareClientLedgerWhatsApp(id, el.dataset.site||"all", el.dataset.period||"all"); break;
+    case "pdfClientLedger": makeClientLedgerPDF(id, el.dataset.site||"all", el.dataset.period||"all"); break;
+    case "exportClientLedger": exportClientLedgerCSV(id, el.dataset.site||"all", el.dataset.period||"all"); break;
+    case "addClientSite": {
+      const cId = el.dataset.id;
+      const c = S.clients.find(x=>x.id===cId);
+      if(!c) break;
+      const inEl = $(`#addSiteInput_${cId}`);
+      const newSite = inEl ? inEl.value.trim() : "";
+      if(!newSite){ toast("Enter a site name."); break; }
+      const existingSites = getClientSites(c);
+      if(!existingSites.some(s => s.toLowerCase() === newSite.toLowerCase())){
+        existingSites.push(newSite);
+        c.sites = existingSites;
+        if(!c.site) c.site = newSite;
+        await write(() => S.db.collection("clients").doc(cId).update({ sites: existingSites, site: c.site, updatedAt: Date.now() }), `Site "${newSite}" added`);
+        dClient(cId, true);
+      } else {
+        toast(`Site "${newSite}" already exists.`);
+      }
       break;
     }
     case "shareWhatsApp": {
@@ -2359,14 +3260,44 @@ document.addEventListener("input", e => {
   }
   if(t.closest("#docForm")){
     if(t.name==="material") onMaterialOrThickChange(t.closest(".item"), "material");
-    if(t.name==="thick") onMaterialOrThickChange(t.closest(".item"), "thick");
-    if(t.name==="cname"){ const c=clientNames().get(t.value); if(c){ const f=t.form; ["phone","address","gstin"].forEach(k=>{ if(!f["c"+k].value) f["c"+k].value=c[k]||""; }); if(f.csite && !f.csite.value && c.site) f.csite.value=c.site; if(c.state) f.cstate.value=c.state; } }
+    if(t.name==="cname"){
+      const c = clientNames().get(t.value) || S.clients.find(x => (x.name||"").trim().toLowerCase() === t.value.trim().toLowerCase());
+      if(c){
+        const f=t.form;
+        ["phone","address","gstin"].forEach(k=>{ if(!f["c"+k].value) f["c"+k].value=c[k]||""; });
+        if(f.csite && !f.csite.value && c.site) f.csite.value=c.site;
+        if(c.state) f.cstate.value=c.state;
+        const sites = getClientSites(c);
+        const sl = $("#clientSiteList");
+        if(sl) sl.innerHTML = sites.map(s => `<option value="${esc(s)}">`).join("");
+      }
+    }
     if(t.name==="date" && !t.form.dataset.id){ const isQ=t.form.dataset.kind==="quote"; const nn=nextNo(isQ?S.quotes:S.invoices, isQ?(S.settings.quotePrefix||"QT"):(S.settings.invPrefix||"INV"), t.value); if(/\/\d{2}-\d{2}\/\d+$/.test(t.form.no.value)) t.form.no.value=nn.no; }
     recalcForm();
   }
 });
 document.addEventListener("change", async e => {
   const t=e.target;
+  if(t.dataset.act==="cliSiteFilter"){
+    const cId = t.dataset.id;
+    if(cId){
+      S.cliState = S.cliState || {};
+      S.cliState[cId] = S.cliState[cId] || {};
+      S.cliState[cId].site = t.value;
+      dClient(cId, true);
+    }
+    return;
+  }
+  if(t.dataset.act==="cliPeriodFilter"){
+    const cId = t.dataset.id;
+    if(cId){
+      S.cliState = S.cliState || {};
+      S.cliState[cId] = S.cliState[cId] || {};
+      S.cliState[cId].period = t.value;
+      dClient(cId, true);
+    }
+    return;
+  }
   if(t.closest("#docForm")){
     if(t.name==="material") onMaterialOrThickChange(t.closest(".item"), "material");
     if(t.name==="thick") onMaterialOrThickChange(t.closest(".item"), "thick");
@@ -2387,7 +3318,7 @@ document.addEventListener("change", async e => {
 });
 document.addEventListener("submit", async e => {
   const f=e.target; if(!f.dataset.form) return; e.preventDefault();
-  const fn = {doc:saveDoc, pay:savePay, txn:saveTxn, mat:saveMat, move:saveMove, ven:saveVen, bill:saveBill, cli:saveCli, set:saveSettings, user:saveUser, pass:savePass, reset:saveReset}[f.dataset.form];
+  const fn = {doc:saveDoc, pay:savePay, txn:saveTxn, mat:saveMat, move:saveMove, ven:saveVen, bill:saveBill, cli:saveCli, set:saveSettings, user:saveUser, pass:savePass, reset:saveReset, clientPay:saveClientPay}[f.dataset.form];
   if(!fn) return;
   await fn(f);
 });
