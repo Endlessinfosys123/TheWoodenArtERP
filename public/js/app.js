@@ -712,15 +712,48 @@ function readRow(r){
   else it.unit=g("unit").trim();
   return it;
 }
+function updateDocSiteOptions(cName, selectedSite){
+  const f = $("#docForm");
+  if(!f) return;
+  const c = cName ? (clientNames().get(cName) || S.clients.find(x => (x.name||"").trim().toLowerCase() === cName.trim().toLowerCase())) : null;
+  const sites = c ? getClientSites(c) : [];
+  const currentVal = selectedSite !== undefined ? selectedSite : (f.csite ? f.csite.value.trim() : "");
+  
+  const sel = f.csiteSelect;
+  if(sel){
+    let opts = `<option value="">${sites.length ? `-- Choose saved site (${sites.length}) --` : "-- No saved sites for this client --"}</option>`;
+    opts += sites.map(s => `<option value="${esc(s)}" ${s.toLowerCase() === currentVal.toLowerCase() ? "selected" : ""}>${esc(s)}</option>`).join("");
+    opts += `<option value="__custom" ${currentVal && !sites.some(s => s.toLowerCase() === currentVal.toLowerCase()) ? "selected" : ""}>+ Add / Custom Site…</option>`;
+    sel.innerHTML = opts;
+    if(currentVal && sites.some(s => s.toLowerCase() === currentVal.toLowerCase())){
+      sel.value = sites.find(s => s.toLowerCase() === currentVal.toLowerCase());
+    } else if(currentVal){
+      sel.value = "__custom";
+    } else {
+      sel.value = "";
+    }
+  }
+
+  const chips = $("#csiteChips");
+  if(chips){
+    chips.innerHTML = sites.map(s => {
+      const active = currentVal && s.toLowerCase() === currentVal.toLowerCase();
+      return `<button type="button" class="th-chip ${active ? 'active' : ''}" data-act="pickDocSite" data-site="${esc(s)}">📍 ${esc(s)}</button>`;
+    }).join("");
+  }
+}
+
 function docForm(kind, existing){
   S._fromQuote = null;
   const isQ = kind==="quote"; const list = isQ?S.quotes:S.invoices;
   const st=S.settings; const d = existing ? JSON.parse(JSON.stringify(existing)) : null;
   const date = d?.date || today();
-  const nn = d ? {no:d.no} : nextNo(list, isQ?(st.quotePrefix||"QT"):(st.invPrefix||"INV"), date);
-  const gst = d ? d.gstMode==="gst" : (st.defaultMode ? st.defaultMode==="gst" : !!st.gstin);
+  const nn = (d && d.no) ? {no:d.no} : nextNo(list, isQ?(st.quotePrefix||"QT"):(st.invPrefix||"INV"), date);
+  const gst = (d && d.gstMode) ? d.gstMode==="gst" : (st.defaultMode ? st.defaultMode==="gst" : !!st.gstin);
   const cl = d?.client || {};
   const siteVal = d?.site || cl.site || "";
+  const clientObj = cl.name ? (clientNames().get(cl.name) || S.clients.find(x => (x.name||"").trim().toLowerCase() === (cl.name||"").trim().toLowerCase())) : null;
+  const clientSites = clientObj ? getClientSites(clientObj) : [];
   const discountVal = (d?.discount !== undefined && d?.discount !== null && +d.discount > 0) ? d.discount : "";
   const roundOffVal = (d?.hasManualRoundOff && d?.roundOff !== undefined && d?.roundOff !== null) ? d.roundOff : "";
   const items = d?.items?.length ? d.items : [{}];
@@ -735,8 +768,24 @@ function docForm(kind, existing){
     </div>
     <div class="legend-s">${isQ?"Quotation for":"Bill to"}</div>
     <div class="fg">
-      <label class="f full"><span>Client name</span><input name="cname" list="clientList" required value="${esc(cl.name||"")}"></label>
-      <label class="f full"><span>Site / Side name</span><input name="csite" list="clientSiteList" placeholder="e.g. Living Room, Site A, Project XYZ" value="${esc(siteVal)}"></label>
+      <label class="f full"><span>Client name</span><input name="cname" id="docClientName" list="clientList" required value="${esc(cl.name||"")}" placeholder="Type or select client"></label>
+      <div class="f full">
+        <label for="csiteSelect" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span style="font-weight:600">Site / Side name</span>
+          <span class="small muted">Architect / Mistry site</span>
+        </label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select id="csiteSelect" name="csiteSelect" style="flex:1;min-width:170px;height:38px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);padding:0 8px;font-size:13.5px;font-weight:600">
+            <option value="">${clientSites.length ? `-- Choose saved site (${clientSites.length}) --` : "-- No saved sites for this client --"}</option>
+            ${clientSites.map(s => `<option value="${esc(s)}" ${s.toLowerCase()===siteVal.toLowerCase()?"selected":""}>${esc(s)}</option>`).join("")}
+            <option value="__custom" ${siteVal && !clientSites.some(s => s.toLowerCase() === siteVal.toLowerCase()) ? "selected" : ""}>+ Add / Custom Site…</option>
+          </select>
+          <input name="csite" id="csiteInput" placeholder="Site name (e.g. Living Room, Bungalow 402)" value="${esc(siteVal)}" style="flex:1;min-width:170px;height:38px">
+        </div>
+        <div id="csiteChips" class="thick-hints" style="margin-top:6px;gap:6px">
+          ${clientSites.map(s => `<button type="button" class="th-chip ${s.toLowerCase()===siteVal.toLowerCase()?'active':''}" data-act="pickDocSite" data-site="${esc(s)}">📍 ${esc(s)}</button>`).join("")}
+        </div>
+      </div>
       <label class="f"><span>Phone</span><input name="cphone" type="tel" inputmode="tel" value="${esc(cl.phone||"")}"></label>
       <label class="f gstonly" ${gst?"":"hidden"}><span>Client GSTIN</span><input name="cgstin" maxlength="15" style="text-transform:uppercase" value="${esc(cl.gstin||"")}"></label>
       <label class="f full"><span>Address</span><input name="caddress" value="${esc(cl.address||"")}"></label>
@@ -753,11 +802,10 @@ function docForm(kind, existing){
     <div class="legend-s">Notes</div>
     <label class="f"><textarea name="notes" placeholder="${isQ?"Scope of work, delivery time, payment terms…":"Thank you for your business."}">${esc(d?.notes ?? "")}</textarea></label>
     <datalist id="clientList">${[...clientNames().keys()].map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
-    <datalist id="clientSiteList">${(cl.name ? getClientSites(S.clients.find(x => (x.name||"").trim().toLowerCase() === (cl.name||"").trim().toLowerCase())) : []).map(s=>`<option value="${esc(s)}">`).join("")}</datalist>
     <datalist id="matList">${S.materials.map(m=>`<option value="${esc(m.name)}">`).join("")}</datalist>
     <datalist id="unitList">${UNITS.map(u=>`<option value="${u}">`).join("")}</datalist>
   </form>`;
-  openSheet(`${d?"Edit":"New"} ${isQ?"quotation":"invoice"}`, body, `<button class="btn" data-act="close">Cancel</button><button class="btn pri" type="submit" form="docForm">Save</button>`);
+  openSheet(`${(d && d.id) ? "Edit" : "New"} ${isQ ? "quotation" : "invoice"}`, body, `<button class="btn" data-act="close">Cancel</button><button class="btn pri" type="submit" form="docForm">Save</button>`);
   recalcForm();
 }
 function readItems(form){
@@ -809,7 +857,7 @@ async function saveDoc(form){
     hasManualRoundOff
   });
   const date=form.date.value;
-  const siteVal = form.csite ? form.csite.value.trim() : "";
+  const siteVal = (form.csite?.value.trim()) || (form.csiteSelect && form.csiteSelect.value !== "__custom" ? form.csiteSelect.value.trim() : "");
   const doc = { no:form.no.value.trim(), date, fy:fyOf(date), gstMode, inter,
     site: siteVal,
     client:{ name:form.cname.value.trim(), site: siteVal, phone:form.cphone.value.trim(), address:form.caddress.value.trim(), gstin:(form.cgstin.value||"").trim().toUpperCase(), state:form.cstate.value },
@@ -3087,13 +3135,53 @@ document.addEventListener("click", async e => {
     case "newInvoiceForClient": {
       const c = S.clients.find(x=>x.id===id);
       const sitePref = el.dataset.site || c?.site || "";
-      if(c){ docForm("invoice"); fillDocForm({site:sitePref, client:{name:c.name, site:sitePref, phone:c.phone, gstin:c.gstin, address:c.address, state:c.state}}); }
+      if(c){
+        docForm("invoice", {
+          site: sitePref,
+          client: {
+            id: c.id,
+            name: c.name,
+            site: sitePref,
+            phone: c.phone || "",
+            gstin: c.gstin || "",
+            address: c.address || "",
+            state: c.state || ""
+          }
+        });
+      }
       break;
     }
     case "newQuoteForClient": {
       const c = S.clients.find(x=>x.id===id);
       const sitePref = el.dataset.site || c?.site || "";
-      if(c){ docForm("quote"); fillDocForm({site:sitePref, client:{name:c.name, site:sitePref, phone:c.phone, gstin:c.gstin, address:c.address, state:c.state}}); }
+      if(c){
+        docForm("quote", {
+          site: sitePref,
+          client: {
+            id: c.id,
+            name: c.name,
+            site: sitePref,
+            phone: c.phone || "",
+            gstin: c.gstin || "",
+            address: c.address || "",
+            state: c.state || ""
+          }
+        });
+      }
+      break;
+    }
+    case "pickDocSite": {
+      const f = $("#docForm");
+      if(!f) break;
+      const site = el.dataset.site || "";
+      if(f.csite) f.csite.value = site;
+      if(f.csiteSelect){
+        const matching = Array.from(f.csiteSelect.options).find(o => o.value && o.value.toLowerCase() === site.toLowerCase());
+        if(matching) f.csiteSelect.value = matching.value;
+        else if(site) f.csiteSelect.value = "__custom";
+        else f.csiteSelect.value = "";
+      }
+      $$("#csiteChips button").forEach(b => b.classList.toggle("active", (b.dataset.site||"").toLowerCase() === site.toLowerCase()));
       break;
     }
     case "cliTab": {
@@ -3236,17 +3324,24 @@ document.addEventListener("click", async e => {
 async function deleteAssets(files){ if(!S.assets||!files?.length) return; for(const f of files){ try{ await S.assets.delete(f.id); }catch{} } }
 function fillDocForm(d){
   const f=$("#docForm"); if(!f) return;
-  const gst=d.gstMode==="gst"; f.gstMode.value=gst?"gst":"none"; $$("[data-act=mode]",f).forEach(b=>b.setAttribute("aria-pressed", (b.dataset.v==="gst")===gst)); $$(".gstonly",f).forEach(x=>x.hidden=!gst);
+  const gst = d.gstMode ? d.gstMode==="gst" : (S.settings.defaultMode ? S.settings.defaultMode==="gst" : !!S.settings.gstin);
+  f.gstMode.value=gst?"gst":"none";
+  $$("[data-act=mode]",f).forEach(b=>b.setAttribute("aria-pressed", (b.dataset.v==="gst")===gst));
+  $$(".gstonly",f).forEach(x=>x.hidden=!gst);
   const cl=d.client||{};
   f.cname.value=cl.name||"";
-  if(f.csite) f.csite.value=d.site||cl.site||"";
+  const siteVal = d.site || cl.site || "";
+  if(f.csite) f.csite.value=siteVal;
+  updateDocSiteOptions(cl.name || "", siteVal);
   f.cphone.value=cl.phone||"";
   f.caddress.value=cl.address||"";
   f.cgstin.value=cl.gstin||"";
   if(cl.state) f.cstate.value=cl.state;
   if(f.discount) f.discount.value=(d.discount!==undefined&&d.discount!==null&&+d.discount>0)?d.discount:"";
   if(f.roundOff) f.roundOff.value=(d.hasManualRoundOff&&d.roundOff!==undefined&&d.roundOff!==null)?d.roundOff:"";
-  $("#items").innerHTML=(d.items||[{}]).map(it=>itemRow(it,gst)).join(""); f.notes.value=d.notes||""; recalcForm();
+  $("#items").innerHTML=(d.items||[{}]).map(it=>itemRow(it,gst)).join("");
+  f.notes.value=d.notes||"";
+  recalcForm();
 }
 document.addEventListener("input", e => {
   const t=e.target;
@@ -3265,12 +3360,28 @@ document.addEventListener("input", e => {
       if(c){
         const f=t.form;
         ["phone","address","gstin"].forEach(k=>{ if(!f["c"+k].value) f["c"+k].value=c[k]||""; });
+        if(c.state && !f.cstate.value) f.cstate.value=c.state;
+        const targetSite = f.csite?.value || c.site || "";
+        updateDocSiteOptions(c.name, targetSite);
         if(f.csite && !f.csite.value && c.site) f.csite.value=c.site;
-        if(c.state) f.cstate.value=c.state;
-        const sites = getClientSites(c);
-        const sl = $("#clientSiteList");
-        if(sl) sl.innerHTML = sites.map(s => `<option value="${esc(s)}">`).join("");
+      } else {
+        updateDocSiteOptions(t.value, t.form?.csite?.value || "");
       }
+    }
+    if(t.id==="csiteInput" || t.name==="csite"){
+      const f = t.form || $("#docForm");
+      const val = t.value.trim().toLowerCase();
+      if(f && f.csiteSelect){
+        const matching = Array.from(f.csiteSelect.options).find(o => o.value && o.value.toLowerCase() === val);
+        if(matching){
+          f.csiteSelect.value = matching.value;
+        } else if(t.value.trim()){
+          f.csiteSelect.value = "__custom";
+        } else {
+          f.csiteSelect.value = "";
+        }
+      }
+      $$("#csiteChips button").forEach(b => b.classList.toggle("active", (b.dataset.site||"").toLowerCase() === val));
     }
     if(t.name==="date" && !t.form.dataset.id){ const isQ=t.form.dataset.kind==="quote"; const nn=nextNo(isQ?S.quotes:S.invoices, isQ?(S.settings.quotePrefix||"QT"):(S.settings.invPrefix||"INV"), t.value); if(/\/\d{2}-\d{2}\/\d+$/.test(t.form.no.value)) t.form.no.value=nn.no; }
     recalcForm();
@@ -3278,6 +3389,35 @@ document.addEventListener("input", e => {
 });
 document.addEventListener("change", async e => {
   const t=e.target;
+  if(t.id==="csiteSelect" || t.name==="csiteSelect"){
+    const f = t.form || $("#docForm");
+    if(f){
+      if(t.value === "__custom"){
+        if(f.csite){
+          f.csite.focus();
+          f.csite.select();
+        }
+        $$("#csiteChips button").forEach(b => b.classList.remove("active"));
+      } else {
+        if(f.csite) f.csite.value = t.value;
+        $$("#csiteChips button").forEach(b => b.classList.toggle("active", (b.dataset.site||"").toLowerCase() === (t.value||"").toLowerCase()));
+      }
+    }
+    return;
+  }
+  if(t.name==="cname" && t.closest("#docForm")){
+    const c = clientNames().get(t.value) || S.clients.find(x => (x.name||"").trim().toLowerCase() === t.value.trim().toLowerCase());
+    if(c){
+      const f=t.form;
+      ["phone","address","gstin"].forEach(k=>{ if(!f["c"+k].value) f["c"+k].value=c[k]||""; });
+      if(c.state && !f.cstate.value) f.cstate.value=c.state;
+      const targetSite = f.csite?.value || c.site || "";
+      updateDocSiteOptions(c.name, targetSite);
+      if(f.csite && !f.csite.value && c.site) f.csite.value=c.site;
+    } else {
+      updateDocSiteOptions(t.value, t.form?.csite?.value || "");
+    }
+  }
   if(t.dataset.act==="cliSiteFilter"){
     const cId = t.dataset.id;
     if(cId){
