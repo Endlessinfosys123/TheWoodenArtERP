@@ -511,6 +511,7 @@ function vHome(){
   if(S.canWrite && !S.offline) h += `<div class="quick">
     <button data-act="newInvoice"><span class="ic">${svg("doc")}</span>Invoice</button>
     <button data-act="newQuote"><span class="ic">${svg("quote")}</span>Quotation</button>
+    <button data-act="openBankStatement"><span class="ic">${svg("receipt")}</span>Statement</button>
     <button data-act="newClient"><span class="ic">${svg("clients")}</span>Client</button>
     <button data-act="newTxn" data-type="expense"><span class="ic">${svg("down")}</span>Expense</button>
     <button data-act="newBill"><span class="ic">${svg("cam")}</span>Vendor bill</button>
@@ -606,7 +607,7 @@ function vMoney(){
   const f = S.sub.money;
   const shown = inMonth.filter(x => (f==="all"||x.type===f) && match("money", x.party, x.cat, x.note, x.mode));
   let h = `<h2 class="vt">Income & Expense</h2>` + seg("money",[["all","All"],["income","Income"],["expense","Expense"]]);
-  h += `<div class="bar"><div class="monthnav"><button data-act="month" data-n="-1" aria-label="Previous month">‹</button><span>${fmtMonth(ym)}</span><button data-act="month" data-n="1" aria-label="Next month">›</button></div>${searchBar("money","Search")}<button class="btn sm" data-act="exportLedger">${svg("dl")}CSV</button></div>`;
+  h += `<div class="bar"><div class="monthnav"><button data-act="month" data-n="-1" aria-label="Previous month">‹</button><span>${fmtMonth(ym)}</span><button data-act="month" data-n="1" aria-label="Next month">›</button></div>${searchBar("money","Search")}<button class="btn sm pri" data-act="openBankStatement" title="Generate Bank Statement / Passbook Report">${svg("receipt")}Statement</button><button class="btn sm" data-act="exportLedger">${svg("dl")}CSV</button></div>`;
   h += `<div class="tiles"><div class="tile good"><div class="k">Income</div><div class="v num">${inrShort(inc)}</div></div><div class="tile bad"><div class="k">Expense</div><div class="v num">${inrShort(exp)}</div></div><div class="tile ${inc-exp>=0?"good":"bad"}"><div class="k">Net</div><div class="v num">${inrShort(inc-exp)}</div></div></div>`;
   if(f!=="income"){
     const byCat={}; inMonth.filter(x=>x.type==="expense").forEach(x=>byCat[x.cat||"Other"]=(byCat[x.cat||"Other"]||0)+x.amount);
@@ -1107,7 +1108,7 @@ async function buildPDFDoc(d, kind){
 
   let y = 10;
 
-  // 1. Logo (top left)
+  // 1. Header: Logo (left) + Company Address & Contact Info (right)
   let logo = null;
   if(st.logoId) {
     logo = await loadImg(st.logoId);
@@ -1116,6 +1117,7 @@ async function buildPDFDoc(d, kind){
     logo = await loadImg("/icons/the_wooden_art_logo.png");
   }
 
+  let logoBottom = y;
   if(logo && logo.w && logo.h) {
     const maxH = 18;
     const maxW = 55;
@@ -1127,15 +1129,63 @@ async function buildPDFDoc(d, kind){
       lh = lw / ratio;
     }
     doc.addImage(logo.data, logo.fmt, M, y + (maxH - lh)/2, lw, lh);
+    logoBottom = y + maxH;
   } else {
-    doc.setFont("helvetica","bold"); doc.setFontSize(15); doc.setTextColor(...INK);
-    doc.text((st.name || "THE WOODEN ART").toUpperCase(), M, y + 8);
+    doc.setFont("helvetica","bold"); doc.setFontSize(14); doc.setTextColor(...INK);
+    doc.text((st.name || "THE WOODEN ART").toUpperCase(), M, y + 6.5);
     doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(...MUT);
-    doc.text("Interior & Exterior Hub", M, y + 13);
+    doc.text("Interior & Exterior Hub", M, y + 11);
+    logoBottom = y + 13;
   }
 
-  // 2. Full-width Orange Bar below logo
-  y = 31;
+  // Right Side: Company Name, Address, Contact Info, GSTIN, PAN
+  let coY = y;
+  const coName = pdfSafe(st.name || "THE WOODEN ART").toUpperCase();
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(...INK);
+  doc.text(coName, W - M, coY + 3.2, { align: "right" });
+  coY += 4.5;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(...MUT);
+
+  // Address lines (wrapped to fit width of ~105mm so it never overlaps logo on left)
+  const addrMaxW = 105;
+  const addrParts = [];
+  if(st.address && st.address.trim()) addrParts.push(st.address.trim());
+  const cityState = [st.city, st.state].filter(Boolean).map(s => String(s).trim()).join(", ");
+  if(cityState) addrParts.push(cityState);
+
+  addrParts.forEach(part => {
+    const lines = doc.splitTextToSize(pdfSafe(part), addrMaxW);
+    lines.forEach(line => {
+      doc.text(line, W - M, coY + 2.8, { align: "right" });
+      coY += 3.4;
+    });
+  });
+
+  // Contact info (Phone & Email)
+  const contactParts = [];
+  if(st.phone) contactParts.push("Mo: " + pdfSafe(st.phone));
+  if(st.email) contactParts.push("Email: " + pdfSafe(st.email));
+  if(contactParts.length) {
+    doc.text(contactParts.join("  |  "), W - M, coY + 2.8, { align: "right" });
+    coY += 3.4;
+  }
+
+  // Tax/Registration info (GSTIN & PAN)
+  const regParts = [];
+  if(st.gstin) regParts.push("GSTIN: " + pdfSafe(st.gstin));
+  if(st.pan) regParts.push("PAN: " + pdfSafe(st.pan));
+  if(regParts.length) {
+    doc.text(regParts.join("  |  "), W - M, coY + 2.8, { align: "right" });
+    coY += 3.4;
+  }
+
+  // 2. Full-width Orange Bar below logo & company info
+  y = Math.max(31, Math.max(logoBottom, coY) + 2.5);
   doc.setFillColor(...ORANGE);
   doc.rect(M, y, contentWidth, 3.8, "F");
   y += 6.5;
@@ -1666,11 +1716,25 @@ async function makePDF(d, kind){
   const res = await buildPDFDoc(d, kind);
   if(!res) return;
   const { blob, fname } = res;
-  if(!S.dl) { toast("Download not available in this view."); return; }
+  if(S.dl && S.dl.save) {
+    try {
+      await S.dl.save({ filename: fname, data: blob });
+      return;
+    } catch(e) {
+      if(e?.code !== "declined") toast("Could not save PDF.");
+      return;
+    }
+  }
   try {
-    await S.dl.save({ filename: fname, data: blob });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fname;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 3000);
   } catch(e) {
-    if(e?.code !== "declined") toast("Could not save PDF.");
+    toast("Could not save PDF.");
   }
 }
 
@@ -2224,28 +2288,50 @@ async function makeClientLedgerPDF(clientId, siteFilter="all", periodFilter="all
   if(st.logoId) logo = await loadImg(st.logoId);
   if(!logo) logo = await loadImg("/icons/the_wooden_art_logo.png");
 
+  let logoBottom = y;
   if(logo && logo.w && logo.h){
     const maxH = 16, maxW = 55;
     const ratio = logo.w / logo.h;
     let lh = maxH, lw = lh * ratio;
     if(lw > maxW){ lw = maxW; lh = lw / ratio; }
     doc.addImage(logo.data, logo.fmt, M, y, lw, lh);
+    logoBottom = y + maxH;
   } else {
     doc.setFont("helvetica","bold"); doc.setFontSize(14); doc.setTextColor(...INK);
-    doc.text((st.name || "THE WOODEN ART").toUpperCase(), M, y + 7);
+    doc.text((st.name || "THE WOODEN ART").toUpperCase(), M, y + 6.5);
+    logoBottom = y + 11;
   }
 
-  doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(...MUT);
-  const rightTexts = [
-    st.name || "The Wooden Art",
-    st.phone ? "Ph: " + pdfSafe(st.phone) : "",
-    st.gstin ? "GSTIN: " + pdfSafe(st.gstin) : "",
-    st.state ? "State: " + pdfSafe(st.state) : ""
-  ].filter(Boolean);
-  let ry = y + 2;
-  rightTexts.forEach(txt => { doc.text(txt, W - M, ry, {align:"right"}); ry += 3.8; });
+  // Right Side: Company Details
+  let coY = y;
+  doc.setFont("helvetica","bold"); doc.setFontSize(10.5); doc.setTextColor(...INK);
+  doc.text(pdfSafe(st.name || "THE WOODEN ART").toUpperCase(), W - M, coY + 3.2, {align:"right"});
+  coY += 4.2;
 
-  y = 28;
+  doc.setFont("helvetica","normal"); doc.setFontSize(7.5); doc.setTextColor(...MUT);
+  const addrParts = [];
+  if(st.address && st.address.trim()) addrParts.push(st.address.trim());
+  const cs = [st.city, st.state].filter(Boolean).map(s => String(s).trim()).join(", ");
+  if(cs) addrParts.push(cs);
+  addrParts.forEach(part => {
+    const lines = doc.splitTextToSize(pdfSafe(part), 105);
+    lines.forEach(l => {
+      doc.text(l, W - M, coY + 2.8, {align:"right"});
+      coY += 3.3;
+    });
+  });
+
+  const contactParts = [];
+  if(st.phone) contactParts.push("Mo: " + pdfSafe(st.phone));
+  if(st.email) contactParts.push("Email: " + pdfSafe(st.email));
+  if(contactParts.length){ doc.text(contactParts.join("  |  "), W - M, coY + 2.8, {align:"right"}); coY += 3.3; }
+
+  const regParts = [];
+  if(st.gstin) regParts.push("GSTIN: " + pdfSafe(st.gstin));
+  if(st.pan) regParts.push("PAN: " + pdfSafe(st.pan));
+  if(regParts.length){ doc.text(regParts.join("  |  "), W - M, coY + 2.8, {align:"right"}); coY += 3.3; }
+
+  y = Math.max(28, Math.max(logoBottom, coY) + 2.5);
   doc.setFillColor(...ORANGE);
   doc.rect(M, y, contentWidth, 3, "F");
   y += 5.5;
@@ -2439,6 +2525,669 @@ function exportClientLedgerCSV(clientId, siteFilter="all", periodFilter="all"){
   rows.push(["", "", "Closing Balance", "", "Net Total", ledger.totalDebit, ledger.totalCredit, ledger.closingBalance]);
   const cleanName = (c.name||"client").replace(/[^\w]+/g,"_").slice(0,30);
   saveText(`Statement_${cleanName}_${today()}.csv`, csv(rows));
+}
+
+/* ---------- BUSINESS FINANCIAL STATEMENT / BANK PASSBOOK ---------- */
+function getStatementDateRange(period, customStart, customEnd) {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1; // 1-12
+  const pad = n => String(n).padStart(2, "0");
+
+  if(period === "this_month") {
+    const start = `${y}-${pad(m)}-01`;
+    const lastDay = new Date(y, m, 0).getDate();
+    const end = `${y}-${pad(m)}-${pad(lastDay)}`;
+    return { start, end, label: `1 Month (Current - ${MON[m-1]} ${y})`, periodName: `Month_${MON[m-1]}_${y}` };
+  }
+
+  if(period === "last_month") {
+    const prevDate = new Date(y, m - 2, 1);
+    const py = prevDate.getFullYear();
+    const pm = prevDate.getMonth() + 1;
+    const start = `${py}-${pad(pm)}-01`;
+    const lastDay = new Date(py, pm, 0).getDate();
+    const end = `${py}-${pad(pm)}-${pad(lastDay)}`;
+    return { start, end, label: `1 Month (Last Month - ${MON[pm-1]} ${py})`, periodName: `LastMonth_${MON[pm-1]}_${py}` };
+  }
+
+  if(period === "6_months") {
+    const sixAgo = new Date(y, m - 6, 1);
+    const sy = sixAgo.getFullYear();
+    const sm = sixAgo.getMonth() + 1;
+    const start = `${sy}-${pad(sm)}-01`;
+    const lastDay = new Date(y, m, 0).getDate();
+    const end = `${y}-${pad(m)}-${pad(lastDay)}`;
+    return { start, end, label: `6 Months (${MON[sm-1]} ${sy} to ${MON[m-1]} ${y})`, periodName: `6Months_${sy}_${y}` };
+  }
+
+  if(period === "fy_current") {
+    const baseStartYear = m >= 4 ? y : y - 1;
+    const start = `${baseStartYear}-04-01`;
+    const end = `${baseStartYear + 1}-03-31`;
+    const code = `FY_${baseStartYear}-${String(baseStartYear + 1).slice(-2)}`;
+    return { start, end, label: `Financial Year FY ${baseStartYear}-${String(baseStartYear + 1).slice(-2)}`, periodName: code };
+  }
+
+  if(period === "fy_prev") {
+    const baseStartYear = (m >= 4 ? y : y - 1) - 1;
+    const start = `${baseStartYear}-04-01`;
+    const end = `${baseStartYear + 1}-03-31`;
+    const code = `FY_${baseStartYear}-${String(baseStartYear + 1).slice(-2)}`;
+    return { start, end, label: `Financial Year FY ${baseStartYear}-${String(baseStartYear + 1).slice(-2)} (Previous)`, periodName: code };
+  }
+
+  // Custom
+  const start = customStart || `${y}-${pad(m)}-01`;
+  const end = customEnd || today();
+  return { start, end, label: `Custom Range (${fmtDate(start)} to ${fmtDate(end)})`, periodName: `Custom_${start}_${end}` };
+}
+
+function buildBusinessStatement(opts = {}) {
+  const period = opts.period || "this_month";
+  const { start, end, label, periodName } = getStatementDateRange(period, opts.customStart, opts.customEnd);
+  const modeFilter = opts.mode || "all";
+  const typeFilter = opts.type || "all";
+
+  const all = ledger();
+
+  // Opening Balance: sum of all transactions strictly before start date
+  const beforeEntries = all.filter(x => (x.date || "") < start);
+  const openingCredits = sum(beforeEntries.filter(x => x.type === "income"), x => x.amount);
+  const openingDebits = sum(beforeEntries.filter(x => x.type === "expense"), x => x.amount);
+  const openingBalance = openingCredits - openingDebits;
+
+  // Period entries
+  let inPeriod = all.filter(x => {
+    const d = x.date || "";
+    return d >= start && d <= end;
+  });
+
+  if(typeFilter !== "all") {
+    inPeriod = inPeriod.filter(x => x.type === typeFilter);
+  }
+  if(modeFilter !== "all") {
+    inPeriod = inPeriod.filter(x => (x.mode || "").toLowerCase() === modeFilter.toLowerCase());
+  }
+
+  // Sort chronological (oldest to newest)
+  inPeriod.sort((a, b) => {
+    const cmp = (a.date || "").localeCompare(b.date || "");
+    if(cmp !== 0) return cmp;
+    return (a.id || "").localeCompare(b.id || "");
+  });
+
+  let running = openingBalance;
+  const rows = inPeriod.map((x, idx) => {
+    const isCr = x.type === "income";
+    const credit = isCr ? x.amount : 0;
+    const debit = !isCr ? x.amount : 0;
+    running = running + credit - debit;
+    return {
+      sr: idx + 1,
+      key: x.key,
+      src: x.src,
+      id: x.id,
+      date: x.date,
+      party: x.party || (isCr ? "Client Receipt" : "Expense"),
+      cat: x.cat || (isCr ? "Income" : "Expense"),
+      note: x.note || "",
+      mode: x.mode || "—",
+      type: x.type,
+      debit,
+      credit,
+      runningBalance: running
+    };
+  });
+
+  const totalCredits = sum(rows, r => r.credit);
+  const totalDebits = sum(rows, r => r.debit);
+  const netChange = totalCredits - totalDebits;
+  const closingBalance = openingBalance + netChange;
+
+  return {
+    period,
+    start,
+    end,
+    label,
+    periodName,
+    modeFilter,
+    typeFilter,
+    openingBalance,
+    totalCredits,
+    totalDebits,
+    netChange,
+    closingBalance,
+    rows
+  };
+}
+
+function openBankStatementSheet(filterOpts = {}) {
+  if(filterOpts.period) S._stmtPeriod = filterOpts.period;
+  if(!S._stmtPeriod) S._stmtPeriod = "this_month";
+  if(filterOpts.customStart !== undefined) S._stmtCustomStart = filterOpts.customStart;
+  if(filterOpts.customEnd !== undefined) S._stmtCustomEnd = filterOpts.customEnd;
+  if(filterOpts.mode) S._stmtMode = filterOpts.mode;
+  if(!S._stmtMode) S._stmtMode = "all";
+  if(filterOpts.type) S._stmtType = filterOpts.type;
+  if(!S._stmtType) S._stmtType = "all";
+
+  const period = S._stmtPeriod;
+  const stmt = buildBusinessStatement({
+    period,
+    customStart: S._stmtCustomStart,
+    customEnd: S._stmtCustomEnd,
+    mode: S._stmtMode,
+    type: S._stmtType
+  });
+
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  const baseStartYear = m >= 4 ? y : y - 1;
+  const curFyLabel = `FY ${baseStartYear}-${String(baseStartYear+1).slice(-2)}`;
+  const prevFyLabel = `FY ${baseStartYear-1}-${String(baseStartYear).slice(-2)}`;
+
+  const periods = [
+    { id: "this_month", label: "1 Month (Current)" },
+    { id: "last_month", label: "Last Month" },
+    { id: "6_months", label: "6 Months" },
+    { id: "fy_current", label: curFyLabel },
+    { id: "fy_prev", label: prevFyLabel },
+    { id: "custom", label: "Custom Range" }
+  ];
+
+  const html = `
+    <div class="stmt-wrap">
+      <div class="legend-s" style="margin-top:0">Select Statement Period</div>
+      <div class="stmt-periods">
+        ${periods.map(p => `
+          <button type="button" class="stmt-period-chip ${p.id === period ? "active" : ""}" data-act="stmtPeriod" data-period="${p.id}">${p.label}</button>
+        `).join("")}
+      </div>
+
+      ${period === "custom" ? `
+        <div class="stmt-custom-dates" style="display:flex;gap:8px;align-items:flex-end;margin:8px 0 12px;flex-wrap:wrap;background:var(--surface-2);padding:10px;border-radius:var(--r-sm);border:1px solid var(--line)">
+          <label class="f" style="flex:1;min-width:130px;margin:0">
+            <span>From Date</span>
+            <input type="date" id="stmtCustomStart" value="${esc(stmt.start)}">
+          </label>
+          <label class="f" style="flex:1;min-width:130px;margin:0">
+            <span>To Date</span>
+            <input type="date" id="stmtCustomEnd" value="${esc(stmt.end)}">
+          </label>
+          <button type="button" class="btn sm pri" data-act="applyStmtCustom" style="height:38px">Apply</button>
+        </div>
+      ` : ""}
+
+      <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap">
+        <label class="f" style="flex:1;min-width:140px;margin:0">
+          <span>Payment Mode</span>
+          <select id="stmtModeFilter">
+            <option value="all" ${S._stmtMode==="all"?"selected":""}>All Modes</option>
+            <option value="Cash" ${S._stmtMode==="Cash"?"selected":""}>Cash Only</option>
+            <option value="Bank" ${S._stmtMode==="Bank"?"selected":""}>Bank Transfer</option>
+            <option value="UPI" ${S._stmtMode==="UPI"?"selected":""}>UPI Only</option>
+            <option value="Cheque" ${S._stmtMode==="Cheque"?"selected":""}>Cheque</option>
+          </select>
+        </label>
+        <label class="f" style="flex:1;min-width:140px;margin:0">
+          <span>Type</span>
+          <select id="stmtTypeFilter">
+            <option value="all" ${S._stmtType==="all"?"selected":""}>All Transactions</option>
+            <option value="income" ${S._stmtType==="income"?"selected":""}>Income (Credits Only)</option>
+            <option value="expense" ${S._stmtType==="expense"?"selected":""}>Expense (Debits Only)</option>
+          </select>
+        </label>
+      </div>
+
+      <div style="display:flex;gap:10px;margin:14px 0 16px;flex-wrap:wrap">
+        <button type="button" class="btn pri" data-act="downloadStmtPdf" style="flex:1;min-width:180px;height:44px;font-size:14px">
+          ${svg("doc")} Download PDF Statement
+        </button>
+        <button type="button" class="btn" data-act="downloadStmtExcel" style="flex:1;min-width:180px;height:44px;font-size:14px">
+          ${svg("dl")} Export to Excel (.CSV)
+        </button>
+      </div>
+
+      <div class="legend-s" style="margin-top:8px">Financial Summary (${esc(stmt.label)})</div>
+      <div class="stmt-summary-grid">
+        <div class="stmt-kpi-card">
+          <div class="lbl">Opening Balance</div>
+          <div class="val num">${inr(stmt.openingBalance)}</div>
+        </div>
+        <div class="stmt-kpi-card" style="border-left:3px solid var(--good)">
+          <div class="lbl" style="color:var(--good)">Total Credits (+)</div>
+          <div class="val num" style="color:var(--good)">+${inr(stmt.totalCredits)}</div>
+        </div>
+        <div class="stmt-kpi-card" style="border-left:3px solid var(--bad)">
+          <div class="lbl" style="color:var(--bad)">Total Debits (−)</div>
+          <div class="val num" style="color:var(--bad)">−${inr(stmt.totalDebits)}</div>
+        </div>
+        <div class="stmt-kpi-card" style="border-left:3px solid ${stmt.netChange>=0?"var(--good)":"var(--bad)"}">
+          <div class="lbl">Net Cash Flow</div>
+          <div class="val num" style="color:${stmt.netChange>=0?"var(--good)":"var(--bad)"}">${stmt.netChange>=0?"+":""}${inr(stmt.netChange)}</div>
+        </div>
+        <div class="stmt-kpi-card" style="background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 40%,var(--line))">
+          <div class="lbl" style="color:var(--accent)">Closing Balance</div>
+          <div class="val num" style="color:var(--accent)">${inr(stmt.closingBalance)}</div>
+        </div>
+      </div>
+
+      <div class="legend-s" style="margin-top:14px">Passbook Statement (${stmt.rows.length} entries)</div>
+      <div class="stmt-table-wrap">
+        <table class="stmt-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Particulars</th>
+              <th>Mode</th>
+              <th style="text-align:right">Debit (Dr)</th>
+              <th style="text-align:right">Credit (Cr)</th>
+              <th style="text-align:right">Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="background:var(--surface-2);font-weight:600">
+              <td class="mono">${fmtDate(stmt.start)}</td>
+              <td colspan="4"><i>OPENING BALANCE B/F</i></td>
+              <td style="text-align:right" class="mono"><b>${inr(stmt.openingBalance)}</b></td>
+            </tr>
+            ${stmt.rows.length === 0 ? `
+              <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--muted)">No transactions found in this date range.</td></tr>
+            ` : stmt.rows.map(r => `
+              <tr>
+                <td class="mono" style="white-space:nowrap">${fmtDate(r.date)}</td>
+                <td>
+                  <div style="font-weight:600">${esc(r.party)}</div>
+                  <div class="small muted">${esc(r.note || r.cat)}</div>
+                </td>
+                <td><span class="chip in" style="font-size:9.5px">${esc(r.mode)}</span></td>
+                <td style="text-align:right;color:var(--bad);white-space:nowrap" class="mono">${r.debit ? "− " + inr(r.debit) : "—"}</td>
+                <td style="text-align:right;color:var(--good);white-space:nowrap" class="mono">${r.credit ? "+ " + inr(r.credit) : "—"}</td>
+                <td style="text-align:right;font-weight:600;white-space:nowrap" class="mono">${inr(r.runningBalance)}</td>
+              </tr>
+            `).join("")}
+            <tr style="background:var(--surface-2);font-weight:700;border-top:2px solid var(--line)">
+              <td>TOTAL</td>
+              <td>Closing Balance</td>
+              <td>—</td>
+              <td style="text-align:right;color:var(--bad);white-space:nowrap" class="mono">− ${inr(stmt.totalDebits)}</td>
+              <td style="text-align:right;color:var(--good);white-space:nowrap" class="mono">+ ${inr(stmt.totalCredits)}</td>
+              <td style="text-align:right;color:var(--accent);white-space:nowrap" class="mono">${inr(stmt.closingBalance)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  openSheet("Bank Statement / Financial Report", html);
+}
+
+async function makeBankStatementPDF(filterOpts = {}) {
+  if(!window.jspdf){ toast("PDF tool did not load. Check internet and reopen."); return; }
+  toast("Generating statement PDF…");
+  const stmt = buildBusinessStatement(filterOpts);
+  const st = S.settings || {};
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:"mm", format:"a4"});
+  const W=210, H=297, M=12;
+  const contentWidth = W - 2*M; // 186 mm
+
+  const ORANGE = [232, 128, 42];
+  const INK = [20, 20, 20];
+  const BORDER = [40, 40, 40];
+  const MUT = [90, 90, 90];
+  const TH_BG = [238, 238, 238];
+  const GRAND_BG = [247, 222, 199];
+  const GOOD = [34, 150, 80];
+  const BAD = [215, 45, 45];
+  const pdfSafe = t => String(t||"").replace(/[×]/g,"x").replace(/[–—]/g,"-").replace(/[^\x20-\x7E\n]/g,"");
+
+  let logo = null;
+  if(st.logoId) logo = await loadImg(st.logoId);
+  if(!logo) logo = await loadImg("/icons/the_wooden_art_logo.png");
+
+  let pageNum = 1;
+  const colW = [20, 56, 26, 18, 22, 22, 22]; // Sum = 186 mm
+  const colHeaders = ["Date", "Particulars / Party", "Category", "Mode", "Debit (Dr)", "Credit (Cr)", "Balance"];
+
+  function drawHeader(){
+    let y = 10;
+    let logoBottom = y;
+    if(logo && logo.w && logo.h){
+      const maxH = 16, maxW = 50;
+      const ratio = logo.w / logo.h;
+      let lh = maxH, lw = lh * ratio;
+      if(lw > maxW){ lw = maxW; lh = lw / ratio; }
+      doc.addImage(logo.data, logo.fmt, M, y + (maxH - lh)/2, lw, lh);
+      logoBottom = y + maxH;
+    } else {
+      doc.setFont("helvetica","bold"); doc.setFontSize(14); doc.setTextColor(...INK);
+      doc.text((st.name || "THE WOODEN ART").toUpperCase(), M, y + 6);
+      doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(...MUT);
+      doc.text("Interior & Exterior Hub", M, y + 10.5);
+      logoBottom = y + 12;
+    }
+
+    let coY = y;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(...INK);
+    doc.text(pdfSafe(st.name || "THE WOODEN ART").toUpperCase(), W - M, coY + 3.2, {align:"right"});
+    coY += 4.5;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...MUT);
+
+    const addrParts = [];
+    if(st.address && st.address.trim()) addrParts.push(st.address.trim());
+    const cs = [st.city, st.state].filter(Boolean).map(s => String(s).trim()).join(", ");
+    if(cs) addrParts.push(cs);
+
+    addrParts.forEach(p => {
+      const lines = doc.splitTextToSize(pdfSafe(p), 105);
+      lines.forEach(l => {
+        doc.text(l, W - M, coY + 2.8, {align:"right"});
+        coY += 3.3;
+      });
+    });
+
+    const contactParts = [];
+    if(st.phone) contactParts.push("Mo: " + pdfSafe(st.phone));
+    if(st.email) contactParts.push("Email: " + pdfSafe(st.email));
+    if(contactParts.length){ doc.text(contactParts.join("  |  "), W - M, coY + 2.8, {align:"right"}); coY += 3.3; }
+
+    const regParts = [];
+    if(st.gstin) regParts.push("GSTIN: " + pdfSafe(st.gstin));
+    if(st.pan) regParts.push("PAN: " + pdfSafe(st.pan));
+    if(regParts.length){ doc.text(regParts.join("  |  "), W - M, coY + 2.8, {align:"right"}); coY += 3.3; }
+
+    y = Math.max(28, Math.max(logoBottom, coY) + 2.5);
+    doc.setFillColor(...ORANGE);
+    doc.rect(M, y, contentWidth, 3.2, "F");
+    y += 5.5;
+
+    doc.setFont("helvetica","bold"); doc.setFontSize(12.5); doc.setTextColor(...INK);
+    doc.text("BUSINESS FINANCIAL STATEMENT / PASSBOOK", W/2, y + 4.5, {align:"center"});
+    y += 8;
+
+    return y;
+  }
+
+  function drawTableHeader(y){
+    doc.setFillColor(...TH_BG);
+    doc.rect(M, y, contentWidth, 7, "F");
+    doc.setDrawColor(...BORDER);
+    doc.setLineWidth(0.3);
+    doc.rect(M, y, contentWidth, 7, "S");
+
+    let cx = M;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(...INK);
+
+    colHeaders.forEach((th, idx) => {
+      const w = colW[idx];
+      if(idx > 0) doc.line(cx, y, cx, y + 7);
+      if(idx >= 4){
+        doc.text(th, cx + w - 1.8, y + 4.8, {align:"right"});
+      } else if(idx === 0 || idx === 3){
+        doc.text(th, cx + w/2, y + 4.8, {align:"center"});
+      } else {
+        doc.text(th, cx + 1.8, y + 4.8);
+      }
+      cx += w;
+    });
+
+    return y + 7;
+  }
+
+  let y = drawHeader();
+
+  // Sub-header details grid
+  doc.setDrawColor(...BORDER);
+  doc.setLineWidth(0.3);
+  doc.rect(M, y, contentWidth, 12, "S");
+  doc.line(M + contentWidth/2, y, M + contentWidth/2, y + 12);
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...INK);
+  doc.text("Period:", M + 2.5, y + 4.2);
+  doc.setFont("helvetica", "normal");
+  doc.text(pdfSafe(stmt.label), M + 16, y + 4.2);
+
+  doc.setFont("helvetica", "bold");
+  doc.text("Dates:", M + 2.5, y + 9.2);
+  doc.setFont("helvetica", "normal");
+  doc.text(`${fmtDate(stmt.start)}  to  ${fmtDate(stmt.end)}`, M + 16, y + 9.2);
+
+  doc.setFont("helvetica", "bold");
+  doc.text("Generated On:", M + contentWidth/2 + 2.5, y + 4.2);
+  doc.setFont("helvetica", "normal");
+  doc.text(fmtDate(today()), M + contentWidth/2 + 26, y + 4.2);
+
+  doc.setFont("helvetica", "bold");
+  doc.text("Total Entries:", M + contentWidth/2 + 2.5, y + 9.2);
+  doc.setFont("helvetica", "normal");
+  doc.text(`${stmt.rows.length} transactions`, M + contentWidth/2 + 26, y + 9.2);
+
+  y += 15;
+
+  // 5 KPI Summary boxes
+  const boxGap = 2;
+  const boxW = (contentWidth - 4 * boxGap) / 5;
+  const boxH = 13.5;
+
+  const kpis = [
+    { label: "Opening Bal", val: pdfAmt(stmt.openingBalance), col: INK, bg: [245, 245, 245] },
+    { label: "Total Credits (+)", val: "+" + pdfAmt(stmt.totalCredits), col: GOOD, bg: [238, 248, 242] },
+    { label: "Total Debits (-)", val: "-" + pdfAmt(stmt.totalDebits), col: BAD, bg: [253, 239, 239] },
+    { label: "Net Cashflow", val: (stmt.netChange>=0?"+":"-") + pdfAmt(Math.abs(stmt.netChange)), col: stmt.netChange>=0?GOOD:BAD, bg: [245, 245, 245] },
+    { label: "Closing Bal", val: pdfAmt(stmt.closingBalance), col: INK, bg: GRAND_BG }
+  ];
+
+  kpis.forEach((kpi, idx) => {
+    const bx = M + idx * (boxW + boxGap);
+    doc.setFillColor(...kpi.bg);
+    doc.rect(bx, y, boxW, boxH, "F");
+    doc.setDrawColor(...BORDER);
+    doc.setLineWidth(0.3);
+    doc.rect(bx, y, boxW, boxH, "S");
+
+    doc.setFont("helvetica", "bold"); doc.setFontSize(6.8); doc.setTextColor(...MUT);
+    doc.text(kpi.label.toUpperCase(), bx + boxW/2, y + 4.2, {align:"center"});
+
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8.2); doc.setTextColor(...kpi.col);
+    doc.text(pdfSafe(kpi.val), bx + boxW/2, y + 9.8, {align:"center"});
+  });
+
+  y += boxH + 4;
+
+  y = drawTableHeader(y);
+
+  function printTableRow(rowVals, isBold = false, bg = null){
+    const rowH = 6.2;
+    if(y + rowH > H - 16){
+      doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...MUT);
+      doc.text(`Page ${pageNum} · Khata Desk Statement`, W/2, H - 7, {align:"center"});
+      doc.addPage();
+      pageNum++;
+      let ny = 12;
+      doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...INK);
+      doc.text(`Financial Statement - Continued (Page ${pageNum})`, M, ny);
+      ny += 4.5;
+      y = drawTableHeader(ny);
+    }
+
+    if(bg){
+      doc.setFillColor(...bg);
+      doc.rect(M, y, contentWidth, rowH, "F");
+    }
+
+    doc.setDrawColor(180, 180, 180);
+    doc.setLineWidth(0.2);
+    doc.rect(M, y, contentWidth, rowH, "S");
+
+    let cx = M;
+    doc.setFont("helvetica", isBold ? "bold" : "normal");
+    doc.setFontSize(7.5);
+
+    rowVals.forEach((val, idx) => {
+      const w = colW[idx];
+      if(idx > 0) doc.line(cx, y, cx, y + rowH);
+
+      doc.setTextColor(...(val.col || INK));
+      if(idx >= 4){
+        doc.text(pdfSafe(val.text), cx + w - 1.8, y + 4.2, {align:"right"});
+      } else if(idx === 0 || idx === 3){
+        doc.text(pdfSafe(val.text), cx + w/2, y + 4.2, {align:"center"});
+      } else {
+        doc.text(pdfSafe(val.text), cx + 1.8, y + 4.2);
+      }
+      cx += w;
+    });
+
+    y += rowH;
+  }
+
+  // Row 1: Opening Balance
+  printTableRow([
+    { text: fmtDate(stmt.start) },
+    { text: "OPENING BALANCE B/F" },
+    { text: "Balance" },
+    { text: "—" },
+    { text: "—" },
+    { text: "—" },
+    { text: pdfAmt(stmt.openingBalance) }
+  ], true, [248, 248, 248]);
+
+  // Transaction Rows
+  stmt.rows.forEach(r => {
+    const partyText = (r.party || "Entry").slice(0, 32);
+    const catText = (r.cat || "—").slice(0, 16);
+    const modeText = (r.mode || "—").slice(0, 10);
+    const debitText = r.debit ? pdfAmt(r.debit) : "—";
+    const creditText = r.credit ? pdfAmt(r.credit) : "—";
+    const balText = pdfAmt(r.runningBalance);
+
+    printTableRow([
+      { text: fmtDate(r.date) },
+      { text: partyText },
+      { text: catText },
+      { text: modeText },
+      { text: debitText, col: r.debit ? BAD : MUT },
+      { text: creditText, col: r.credit ? GOOD : MUT },
+      { text: balText }
+    ], false);
+  });
+
+  // Final Summary Row
+  printTableRow([
+    { text: "TOTAL" },
+    { text: "CLOSING BALANCE" },
+    { text: "—" },
+    { text: "—" },
+    { text: pdfAmt(stmt.totalDebits), col: BAD },
+    { text: pdfAmt(stmt.totalCredits), col: GOOD },
+    { text: pdfAmt(stmt.closingBalance) }
+  ], true, GRAND_BG);
+
+  // Footer for last page
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...MUT);
+  doc.text(`Page ${pageNum} · Khata Desk Statement`, W/2, H - 7, {align:"center"});
+
+  const pdfBlob = doc.output("blob");
+  const cleanPeriod = (stmt.periodName || "statement").replace(/[^\w]+/g, "_");
+  const filename = `Statement_${cleanPeriod}_${stmt.start}_to_${stmt.end}.pdf`;
+
+  if(S.dl && S.dl.save){
+    await S.dl.save({filename, data: pdfBlob});
+  } else {
+    const url = URL.createObjectURL(pdfBlob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+  toast("Statement PDF downloaded");
+}
+
+function downloadBankStatementExcel(filterOpts = {}) {
+  const stmt = buildBusinessStatement(filterOpts);
+  const st = S.settings || {};
+  const rows = [];
+
+  rows.push([st.name || "Khata Desk Business Account"]);
+  const fullAddr = [st.address, st.city, st.state].filter(Boolean).join(", ");
+  if(fullAddr) rows.push([fullAddr]);
+  rows.push([
+    st.phone ? "Phone: " + st.phone : "",
+    st.email ? "Email: " + st.email : "",
+    st.gstin ? "GSTIN: " + st.gstin : "",
+    st.pan ? "PAN: " + st.pan : ""
+  ].filter(Boolean));
+  rows.push(["BUSINESS FINANCIAL STATEMENT / PASSBOOK"]);
+  rows.push(["Statement Period", stmt.label, "From", stmt.start, "To", stmt.end]);
+  rows.push(["Generated Date", today(), "Mode Filter", stmt.modeFilter, "Type Filter", stmt.typeFilter]);
+  rows.push([]);
+
+  rows.push(["FINANCIAL SUMMARY"]);
+  rows.push(["Opening Balance (Rs.)", stmt.openingBalance.toFixed(2)]);
+  rows.push(["Total Credits / Inflow (Rs.)", stmt.totalCredits.toFixed(2)]);
+  rows.push(["Total Debits / Outflow (Rs.)", stmt.totalDebits.toFixed(2)]);
+  rows.push(["Net Cashflow / P&L (Rs.)", stmt.netChange.toFixed(2)]);
+  rows.push(["Closing Balance (Rs.)", stmt.closingBalance.toFixed(2)]);
+  rows.push([]);
+
+  rows.push([
+    "Sr No.",
+    "Date",
+    "Particulars / Party",
+    "Category",
+    "Payment Mode",
+    "Debit / Outflow (Rs.)",
+    "Credit / Inflow (Rs.)",
+    "Running Balance (Rs.)",
+    "Reference / Note"
+  ]);
+
+  rows.push([
+    "—",
+    stmt.start,
+    "OPENING BALANCE B/F",
+    "Balance",
+    "—",
+    "",
+    "",
+    stmt.openingBalance.toFixed(2),
+    "Opening Balance"
+  ]);
+
+  stmt.rows.forEach(r => {
+    rows.push([
+      r.sr,
+      r.date,
+      r.party,
+      r.cat,
+      r.mode,
+      r.debit ? r.debit.toFixed(2) : "",
+      r.credit ? r.credit.toFixed(2) : "",
+      r.runningBalance.toFixed(2),
+      r.note
+    ]);
+  });
+
+  rows.push([
+    "TOTAL",
+    "",
+    "",
+    "",
+    "",
+    stmt.totalDebits.toFixed(2),
+    stmt.totalCredits.toFixed(2),
+    stmt.closingBalance.toFixed(2),
+    "CLOSING BALANCE"
+  ]);
+
+  const cleanPeriod = (stmt.periodName || "statement").replace(/[^\w]+/g, "_");
+  const filename = `Statement_${cleanPeriod}_${stmt.start}_to_${stmt.end}.csv`;
+  return saveText(filename, csv(rows));
 }
 
 function clientForm(c, after){
@@ -3158,8 +3907,25 @@ async function databaseSettingsSheet() {
 /* ---------- exports ---------- */
 function csv(rows){ return rows.map(r=>r.map(v=>{ v=String(v??""); return /[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v; }).join(",")).join("\n"); }
 async function saveText(filename, text){
-  if(!S.dl){ toast("Download not available in this view."); return; }
-  try{ await S.dl.save({filename, data:(/\.csv$/.test(filename)?"\ufeff":"")+text}); }catch(e){ if(e?.code!=="declined") toast("Could not save file."); }
+  const data = (/\.csv$/.test(filename) ? "\ufeff" : "") + text;
+  if(S.dl && S.dl.save){
+    try{ await S.dl.save({filename, data}); return; }
+    catch(e){ if(e?.code==="declined") return; }
+  }
+  try{
+    const mime = /\.csv$/.test(filename) ? "text/csv;charset=utf-8;" : (/\.json$/.test(filename) ? "application/json" : "text/plain");
+    const blob = new Blob([data], {type: mime});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 2000);
+  }catch(e){
+    console.error("saveText failed:", e);
+    toast("Could not save file.");
+  }
 }
 const EXPORTS = {
   exportInvoices: ()=> saveText(`invoices_${today()}.csv`, csv([["Invoice no","Date","Client","Site","Client GSTIN","Type","Total sq.ft","Taxable","Discount","Round off","Tax","Total","Received","Balance","Status","Due date"], ...[...S.invoices].sort((a,b)=>(a.date||"").localeCompare(b.date||"")).map(i=>{ const ci=calc(i); return [i.no,i.date,i.client?.name,i.site||i.client?.site||"",i.client?.gstin,i.gstMode==="gst"?"GST":"Simple",ci.area,ci.sub,ci.discount||0,ci.roundOff||0,ci.tax,ci.total,paidOf(i),r2(ci.total-paidOf(i)),invStatus(i),i.dueDate]; })])),
@@ -3301,6 +4067,43 @@ document.addEventListener("click", async e => {
     case "waClientLedger": shareClientLedgerWhatsApp(id, el.dataset.site||"all", el.dataset.period||"all"); break;
     case "pdfClientLedger": makeClientLedgerPDF(id, el.dataset.site||"all", el.dataset.period||"all"); break;
     case "exportClientLedger": exportClientLedgerCSV(id, el.dataset.site||"all", el.dataset.period||"all"); break;
+    case "openBankStatement": openBankStatementSheet(); break;
+    case "stmtPeriod": {
+      S._stmtPeriod = el.dataset.period;
+      openBankStatementSheet({ period: S._stmtPeriod });
+      break;
+    }
+    case "applyStmtCustom": {
+      const cs = $("#stmtCustomStart")?.value;
+      const ce = $("#stmtCustomEnd")?.value;
+      if(!cs || !ce) { toast("Please select both From and To dates."); break; }
+      S._stmtCustomStart = cs;
+      S._stmtCustomEnd = ce;
+      openBankStatementSheet({ period: "custom", customStart: cs, customEnd: ce });
+      break;
+    }
+    case "downloadStmtPdf": {
+      el.disabled = true;
+      await makeBankStatementPDF({
+        period: S._stmtPeriod || "this_month",
+        customStart: S._stmtCustomStart,
+        customEnd: S._stmtCustomEnd,
+        mode: S._stmtMode || "all",
+        type: S._stmtType || "all"
+      });
+      el.disabled = false;
+      break;
+    }
+    case "downloadStmtExcel": {
+      downloadBankStatementExcel({
+        period: S._stmtPeriod || "this_month",
+        customStart: S._stmtCustomStart,
+        customEnd: S._stmtCustomEnd,
+        mode: S._stmtMode || "all",
+        type: S._stmtType || "all"
+      });
+      break;
+    }
     case "addClientSite": {
       const cId = el.dataset.id;
       const c = S.clients.find(x=>x.id===cId);
@@ -3527,6 +4330,16 @@ document.addEventListener("input", e => {
 });
 document.addEventListener("change", async e => {
   const t=e.target;
+  if(t.id==="stmtModeFilter"){
+    S._stmtMode = t.value;
+    openBankStatementSheet({ mode: S._stmtMode });
+    return;
+  }
+  if(t.id==="stmtTypeFilter"){
+    S._stmtType = t.value;
+    openBankStatementSheet({ type: S._stmtType });
+    return;
+  }
   if(t.id==="csiteSelect" || t.name==="csiteSelect"){
     const f = t.form || $("#docForm");
     if(f){
