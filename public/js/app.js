@@ -3,7 +3,7 @@
 /* ---------- constants ---------- */
 const STATES = ["Andaman and Nicobar Islands","Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chandigarh","Chhattisgarh","Dadra and Nagar Haveli and Daman and Diu","Delhi","Goa","Gujarat","Haryana","Himachal Pradesh","Jammu and Kashmir","Jharkhand","Karnataka","Kerala","Ladakh","Lakshadweep","Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland","Odisha","Puducherry","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand","West Bengal"];
 const GST_RATES = [0, 0.25, 3, 5, 12, 18, 28];
-const MATS = ["Acrylic","MDF","Corian","MS (Mild Steel)","SS (Stainless Steel)","ACP","WPC","Plywood","Aluminium","Brass","Other"];
+const MATS = ["Acrylic","MDF","Corian","MS (Mild Steel)","SS (Stainless Steel)","ACP","WPC","Plywood","Aluminium","Brass","Transportation","Other"];
 
 const DEFAULT_MAT_PRICING = [
   { material: "Acrylic", thick: 2, rate: 80 },
@@ -62,9 +62,10 @@ function getDocMaterialsList(){
   const set = new Set();
   list.forEach(x => {
     const name = (x.material || "").trim();
-    if(name && name.toLowerCase() !== "other") set.add(name);
+    if(name && name.toLowerCase() !== "other" && name.toLowerCase() !== "transportation") set.add(name);
   });
   const sorted = [...set].sort((a,b) => a.localeCompare(b));
+  sorted.push("Transportation");
   sorted.push("Other");
   return sorted;
 }
@@ -116,8 +117,64 @@ function onMaterialOrThickChange(itemRowElem, changedField){
   const matIn = $("[name=material]", r);
   const thickIn = $("[name=thick]", r);
   const rateIn = $("[name=rate]", r);
+  const descIn = $("[name=desc]", r);
+  const qtyIn = $("[name=qty]", r);
+  const unitIn = $("[name=unit]", r);
   const matVal = matIn ? matIn.value : "";
   let thickVal = thickIn ? thickIn.value.trim() : "";
+
+  const thWrap = $("[data-role=thickHints]", r);
+  const trWrap = $("[data-role=transportHints]", r);
+  const pseg = $(".pseg", r);
+
+  if(matVal === "Transportation"){
+    r.dataset.pricing = "unit";
+    const pIn = $("[name=pricing]", r); if(pIn) pIn.value = "unit";
+    $$("[data-act=pricing]", r).forEach(b => b.setAttribute("aria-pressed", b.dataset.v === "unit"));
+    if(pseg) pseg.hidden = true;
+
+    if(thickIn){ thickIn.value = ""; thickIn.hidden = true; }
+    if(thWrap){ thWrap.innerHTML = ""; thWrap.hidden = true; }
+    if(trWrap) trWrap.hidden = false;
+
+    const qlbl = $(".qlbl", r); if(qlbl) qlbl.textContent = "No. of Trips";
+    const rlbl = $(".rlbl", r); if(rlbl) rlbl.textContent = "Rate / Trip (₹)";
+    
+    if(qtyIn && (!qtyIn.value || +qtyIn.value === 0)) qtyIn.value = 1;
+    const curQty = +qtyIn?.value || 1;
+
+    if(unitIn && (!unitIn.value || unitIn.value === "Nos" || unitIn.value === "Sq.ft")) {
+      unitIn.value = curQty === 2 ? "Trips" : "Trip";
+    }
+
+    if(descIn && (!descIn.value.trim() || descIn.value.trim() === "Transportation" || descIn.value.includes("Trip"))){
+      descIn.value = curQty === 2
+        ? "Transportation - Dual Trip (Pickup & Delivery)"
+        : "Transportation - Single Trip (Material Pickup)";
+    }
+
+    const hsnIn = $("[name=hsn]", r);
+    if(hsnIn && !hsnIn.value) hsnIn.value = "9965";
+
+    if(trWrap){
+      $$("[data-act=pickTripType]", trWrap).forEach(b => {
+        b.classList.toggle("active", (b.dataset.type === "single" && curQty === 1) || (b.dataset.type === "dual" && curQty === 2));
+      });
+    }
+
+    if(rateIn && !rateIn.value){
+      rateIn.focus();
+    }
+    recalcForm();
+    return;
+  }
+
+  if(pseg) pseg.hidden = false;
+  if(thickIn) thickIn.hidden = false;
+  if(trWrap) trWrap.hidden = true;
+  const curPricing = r.dataset.pricing || "sqft";
+  const qlbl = $(".qlbl", r); if(qlbl) qlbl.textContent = curPricing === "sqft" ? "Pieces" : "Qty";
+  const rlbl = $(".rlbl", r); if(rlbl) rlbl.textContent = curPricing === "sqft" ? "Rate / sq.ft (₹)" : "Rate (₹)";
 
   const m = S.materials.find(x => x.name === matVal);
   if(m && changedField === "material"){
@@ -127,11 +184,10 @@ function onMaterialOrThickChange(itemRowElem, changedField){
     const v = (m.unit||"").toLowerCase().startsWith("sq") ? "sqft" : "unit";
     const b = $(`[data-act=pricing][data-v=${v}]`, r);
     if(b && r.dataset.pricing !== v) b.click();
-    if(v === "unit" && m.unit && $("[name=unit]", r)) $("[name=unit]", r).value = m.unit;
+    if(v === "unit" && m.unit && unitIn) unitIn.value = m.unit;
   }
 
   const thList = (matVal && matVal !== "Other") ? getMaterialThicknesses(matVal) : [];
-  const thWrap = $("[data-role=thickHints]", r);
   if(thWrap){
     if(thList.length){
       const thChipsHtml = thList.map(t => {
@@ -174,7 +230,7 @@ function onMaterialOrThickChange(itemRowElem, changedField){
 }
 
 const DIMS = { in:{label:"inch", f:1/144}, ft:{label:"feet", f:1}, mm:{label:"mm", f:1/92903.04} };
-const UNITS = ["Sq.ft","Nos","Pcs","Kg","g","Ltr","Mtr","Ft","Sq.ft","Box","Bag","Set","Hr","Day","Job","Ton"];
+const UNITS = ["Sq.ft","Nos","Pcs","Trip","Trips","Kg","g","Ltr","Mtr","Ft","Box","Bag","Set","Hr","Day","Job","Ton"];
 const MODES = ["Cash","UPI","Bank transfer","Cheque","Card"];
 const INC_CATS = ["Sales (no invoice)","Service","Advance received","Interest","Other income"];
 const EXP_CATS = ["Material purchase","Salary / Wages","Rent","Electricity","Transport","Fuel","Repair & maintenance","Office supplies","Phone / Internet","Food & tea","Tax / Fees","Other expense"];
@@ -257,7 +313,13 @@ const r2 = n => Math.round((+n||0)*100)/100;
 /* sq.ft maths: area of one piece x pieces. 144 sq.inch = 1 sq.ft, 92903.04 sq.mm = 1 sq.ft */
 const lineSqft = it => r2((+it.l||0)*(+it.w||0)*((DIMS[it.du]||DIMS.in).f)*(+it.qty||0));
 const lineAmt = it => it.pricing==="sqft" ? r2(lineSqft(it)*(+it.rate||0)) : r2((+it.qty||0)*(+it.rate||0));
-const itemTitle = it => { const m=[it.material, it.thick?`${it.thick}mm`:""].filter(Boolean).join(" "); return [m, it.desc].filter(Boolean).join(" – ") || "Item"; };
+const itemTitle = it => {
+  const m = [it.material, it.thick ? `${it.thick}mm` : ""].filter(Boolean).join(" ");
+  if(!m) return it.desc || "Item";
+  if(!it.desc) return m;
+  if(it.desc.toLowerCase().startsWith(m.toLowerCase())) return it.desc;
+  return `${m} – ${it.desc}`;
+};
 const itemSize = it => it.pricing==="sqft" ? `${+it.l||0} × ${+it.w||0} ${it.du==="ft"?"ft":it.du==="mm"?"mm":"in"}` : "";
 const qtyText = it => it.pricing==="sqft" ? `${(+it.sqft||lineSqft(it)).toFixed(2)} sq.ft` : `${+it.qty||0} ${it.unit||""}`.trim();
 const inr = (n, dec) => { n=+n||0; const d = dec ?? (Math.abs(n%1)>0.001?2:0); return "₹" + n.toLocaleString("en-IN",{minimumFractionDigits:d,maximumFractionDigits:d}); };
@@ -671,10 +733,11 @@ function clientNames(){
   return m;
 }
 function itemRow(it={}, gst, prev){
-  const p = it.pricing || (it.desc && !it.material && it.rate!==undefined && !it.l ? "unit" : (prev?.pricing || "sqft"));
-  const du = it.du || prev?.du || S.settings.dimUnit || "in";
   const mat = it.material ?? prev?.material ?? "";
-  const thick = it.thick ?? prev?.thick ?? "";
+  const isTransport = mat === "Transportation";
+  const p = isTransport ? "unit" : (it.pricing || (it.desc && !it.material && it.rate!==undefined && !it.l ? "unit" : (prev?.pricing || "sqft")));
+  const du = it.du || prev?.du || S.settings.dimUnit || "in";
+  const thick = isTransport ? "" : (it.thick ?? prev?.thick ?? "");
   
   const docMats = getDocMaterialsList();
   const extra = mat && !docMats.includes(mat) ? `<option selected>${esc(mat)}</option>` : "";
@@ -682,25 +745,53 @@ function itemRow(it={}, gst, prev){
     + docMats.map(m => `<option value="${esc(m)}" ${m===mat?"selected":""}>${esc(m)}</option>`).join("")
     + extra;
 
-  const thList = (mat && mat !== "Other") ? getMaterialThicknesses(mat) : [];
+  const thList = (!isTransport && mat && mat !== "Other") ? getMaterialThicknesses(mat) : [];
   const thChipsHtml = thList.map(t => {
     const isActive = thick !== "" && parseFloat(thick) === parseFloat(t.thick);
     return `<button type="button" class="th-chip ${isActive?'active':''}" data-act="pickThick" data-thick="${esc(t.thick)}" data-rate="${esc(t.rate)}">${esc(t.thick)}mm <span class="rate-badge">₹${esc(t.rate)}</span></button>`;
   }).join("");
 
+  const isDual = isTransport && (+it.qty === 2 || (it.desc && /dual|both/i.test(it.desc)));
+  const isSingle = isTransport && (!isDual && (+it.qty === 1 || (it.desc && /single|pickup/i.test(it.desc))));
+  const tripChipsHtml = `
+    <span class="muted" style="font-size:11px;font-weight:700;display:flex;align-items:center;margin-right:2px">Trip Mode:</span>
+    <button type="button" class="th-chip ${isSingle?'active':''}" data-act="pickTripType" data-type="single">🚐 Single Trip (1 Trip · Pickup only)</button>
+    <button type="button" class="th-chip ${isDual?'active':''}" data-act="pickTripType" data-type="dual">🔄 Dual Trip (2 Trips · Pickup & Delivery)</button>
+    <button type="button" class="th-chip ${(!isSingle && !isDual && it.qty)?'active':''}" data-act="pickTripType" data-type="custom">✏️ Custom Trip</button>
+  `;
+
+  const qlblText = isTransport ? "No. of Trips" : (p==="sqft" ? "Pieces" : "Qty");
+  const rlblText = isTransport ? "Rate / Trip (₹)" : (p==="sqft" ? "Rate / sq.ft (₹)" : "Rate (₹)");
+  const unitVal = isTransport ? (it.unit || (+it.qty === 2 ? "Trips" : "Trip")) : (p==="sqft" ? "Nos" : (it.unit || "Nos"));
+  const descPlaceholder = isTransport ? "Transportation details (e.g. Pickup from site, Delivery)" : "Job / design (e.g. Name plate, Jali cutting)";
+  const defaultDesc = isTransport ? (it.desc || (isDual ? "Transportation - Dual Trip (Pickup & Delivery)" : "Transportation - Single Trip (Material Pickup)")) : (it.desc || "");
+  const defaultQty = isTransport ? (it.qty ?? (isDual ? 2 : 1)) : (it.qty ?? 1);
+
   return `<div class="item" data-pricing="${p}">
-    <div class="d"><select name="material" aria-label="Material">${matOpts}</select><input name="thick" type="number" inputmode="decimal" step="any" min="0" placeholder="mm" value="${esc(thick)}" aria-label="Thickness (mm)" class="thick"><button type="button" class="x" data-act="rmItem" aria-label="Remove item">×</button></div>
-    <div class="thick-hints full" data-role="thickHints" ${thList.length ? "" : "hidden"}><span class="muted" style="font-size:11px;font-weight:600;display:flex;align-items:center;margin-right:2px">Thickness:</span>${thChipsHtml}</div>
-    <input class="full" name="desc" placeholder="Job / design (e.g. Name plate, Jali cutting)" value="${esc(it.desc||"")}" aria-label="Description">
+    <div class="d">
+      <select name="material" aria-label="Material">${matOpts}</select>
+      <input name="thick" type="number" inputmode="decimal" step="any" min="0" placeholder="mm" value="${esc(thick)}" aria-label="Thickness (mm)" class="thick" ${isTransport ? "hidden" : ""}>
+      <button type="button" class="x" data-act="rmItem" aria-label="Remove item">×</button>
+    </div>
+    <div class="thick-hints full" data-role="thickHints" ${thList.length ? "" : "hidden"}>
+      <span class="muted" style="font-size:11px;font-weight:600;display:flex;align-items:center;margin-right:2px">Thickness:</span>${thChipsHtml}
+    </div>
+    <div class="thick-hints full" data-role="transportHints" ${isTransport ? "" : "hidden"} style="margin-top:6px;gap:6px;background:var(--surface-2);padding:6px 10px;border-radius:8px;border:1px solid var(--line)">
+      ${tripChipsHtml}
+    </div>
+    <input class="full" name="desc" placeholder="${descPlaceholder}" value="${esc(defaultDesc)}" aria-label="Description">
     <input type="hidden" name="pricing" value="${p}">
-    <div class="pseg full" role="group"><button type="button" data-act="pricing" data-v="sqft" aria-pressed="${p==="sqft"}">Per sq.ft</button><button type="button" data-act="pricing" data-v="unit" aria-pressed="${p!=="sqft"}">Per piece / unit</button></div>
+    <div class="pseg full" role="group" ${isTransport ? "hidden" : ""}>
+      <button type="button" data-act="pricing" data-v="sqft" aria-pressed="${p==="sqft"}">Per sq.ft</button>
+      <button type="button" data-act="pricing" data-v="unit" aria-pressed="${p!=="sqft"}">Per piece / unit</button>
+    </div>
     <label class="c2 sq"><small>Length</small><input name="l" type="number" inputmode="decimal" step="any" min="0" value="${esc(it.l??"")}"></label>
     <label class="c2 sq"><small>Width</small><input name="w" type="number" inputmode="decimal" step="any" min="0" value="${esc(it.w??"")}"></label>
     <label class="c2 sq"><small>Size in</small><select name="du">${Object.entries(DIMS).map(([k,v])=>`<option value="${k}" ${k===du?"selected":""}>${v.label}</option>`).join("")}</select></label>
-    <label class="c2 qr"><small class="qlbl">${p==="sqft"?"Pieces":"Qty"}</small><input name="qty" type="number" inputmode="decimal" step="any" min="0" value="${esc(it.qty??1)}"></label>
-    <label class="c2 un"><small>Unit</small><input name="unit" list="unitList" value="${esc(it.pricing==="sqft"?"Nos":(it.unit||"Nos"))}"></label>
-    <label class="c2 qr"><small class="rlbl">${p==="sqft"?"Rate / sq.ft (₹)":"Rate (₹)"}</small><input name="rate" type="number" inputmode="decimal" step="any" min="0" value="${esc(it.rate??"")}"></label>
-    <label class="c3 gstonly" ${gst?"":"hidden"}><small>HSN / SAC</small><input name="hsn" inputmode="numeric" value="${esc(it.hsn||"")}"></label>
+    <label class="c2 qr"><small class="qlbl">${qlblText}</small><input name="qty" type="number" inputmode="decimal" step="any" min="0" value="${esc(defaultQty)}"></label>
+    <label class="c2 un"><small>Unit</small><input name="unit" list="unitList" value="${esc(unitVal)}"></label>
+    <label class="c2 qr"><small class="rlbl">${rlblText}</small><input name="rate" type="number" inputmode="decimal" step="any" min="0" value="${esc(it.rate??"")}"></label>
+    <label class="c3 gstonly" ${gst?"":"hidden"}><small>HSN / SAC</small><input name="hsn" inputmode="numeric" value="${esc(it.hsn||(isTransport?"9965":""))}"></label>
     <label class="c3 gstonly" ${gst?"":"hidden"}><small>GST %</small><select name="gst">${GST_RATES.map(r=>`<option value="${r}" ${(+(it.gst ?? S.settings.defaultGst ?? 18))===r?"selected":""}>${r}%</option>`).join("")}</select></label>
     <div class="lineamt num"></div>
   </div>`;
@@ -3278,6 +3369,42 @@ document.addEventListener("click", async e => {
       recalcForm();
       break;
     }
+    case "pickTripType": {
+      const r = el.closest(".item");
+      if(!r) break;
+      const type = el.dataset.type;
+      const qtyIn = $("[name=qty]", r);
+      const unitIn = $("[name=unit]", r);
+      const descIn = $("[name=desc]", r);
+      const rateIn = $("[name=rate]", r);
+
+      r.dataset.pricing = "unit";
+      const pIn = $("[name=pricing]", r); if(pIn) pIn.value = "unit";
+      $$("[data-act=pricing]", r).forEach(b => b.setAttribute("aria-pressed", b.dataset.v === "unit"));
+      const pseg = $(".pseg", r); if(pseg) pseg.hidden = true;
+      const qlbl = $(".qlbl", r); if(qlbl) qlbl.textContent = "No. of Trips";
+      const rlbl = $(".rlbl", r); if(rlbl) rlbl.textContent = "Rate / Trip (₹)";
+
+      if(type === "single"){
+        if(qtyIn) qtyIn.value = 1;
+        if(unitIn) unitIn.value = "Trip";
+        if(descIn) descIn.value = "Transportation - Single Trip (Material Pickup)";
+      } else if(type === "dual"){
+        if(qtyIn) qtyIn.value = 2;
+        if(unitIn) unitIn.value = "Trips";
+        if(descIn) descIn.value = "Transportation - Dual Trip (Pickup & Delivery)";
+      } else if(type === "custom"){
+        if(unitIn) unitIn.value = "Trip";
+        if(qtyIn) { qtyIn.focus(); qtyIn.select(); }
+      }
+
+      $$("[data-act=pickTripType]", r).forEach(b => b.classList.toggle("active", b.dataset.type === type));
+      if(rateIn && !rateIn.value){
+        rateIn.focus();
+      }
+      recalcForm();
+      break;
+    }
     case "addMatPrice": {
       const name = ($("#newMatName")?.value || "").trim();
       const thick = ($("#newMatThick")?.value || "").trim();
@@ -3382,6 +3509,17 @@ document.addEventListener("input", e => {
         }
       }
       $$("#csiteChips button").forEach(b => b.classList.toggle("active", (b.dataset.site||"").toLowerCase() === val));
+    }
+    if(t.name==="qty"){
+      const r = t.closest(".item");
+      if(r && $("[name=material]", r)?.value === "Transportation"){
+        const num = +t.value;
+        const unitIn = $("[name=unit]", r);
+        if(unitIn) unitIn.value = num === 2 ? "Trips" : "Trip";
+        $$("[data-act=pickTripType]", r).forEach(b => {
+          b.classList.toggle("active", (b.dataset.type === "single" && num === 1) || (b.dataset.type === "dual" && num === 2));
+        });
+      }
     }
     if(t.name==="date" && !t.form.dataset.id){ const isQ=t.form.dataset.kind==="quote"; const nn=nextNo(isQ?S.quotes:S.invoices, isQ?(S.settings.quotePrefix||"QT"):(S.settings.invPrefix||"INV"), t.value); if(/\/\d{2}-\d{2}\/\d+$/.test(t.form.no.value)) t.form.no.value=nn.no; }
     recalcForm();
