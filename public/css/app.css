@@ -909,5 +909,296 @@ body.khata-locked main, body.khata-locked header, body.khata-locked nav, body.kh
   background: var(--surface-2);
 }
 
+/* WORK NOTES & DIARY LEDGER STYLES */
+.diary-view-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+}
+.diary-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  position: relative;
+}
+.diary-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+}
+.diary-card.diary-debit {
+  border-left: 4px solid var(--brand, #ea580c);
+}
+.diary-card.diary-credit {
+  border-left: 4px solid var(--good, #16a34a);
+  background: var(--surface);
+}
+.diary-card-hd {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed var(--line);
+}
+.diary-card-date {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.diary-card-cal {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+}
+.diary-card-day {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+}
+.diary-card-shree {
+  font-weight: 700;
+  color: #dc2626;
+  font-size: 14px;
+  letter-spacing: 1px;
+}
+.diary-circle-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--brand, #0284c7);
+  color: var(--brand, #0284c7);
+  font-weight: 800;
+  font-size: 13px;
+  background: var(--surface-2);
+}
+.diary-circle-badge.sm {
+  width: 26px;
+  height: 26px;
+  font-size: 11.5px;
+  border-width: 1.5px;
+}
+.diary-card-site-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.diary-card-items {
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--line-subtle);
+}
+.diary-card-item-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.diary-card-item-line .circ {
+  font-weight: 700;
+  color: var(--brand, #ea580c);
+  flex-shrink: 0;
+}
+.diary-card-item-line .item-desc {
+  flex: 1;
+  color: var(--ink);
+}
+.diary-card-item-line .item-amt {
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.diary-card-ft {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 6px;
+  border-top: 1px solid var(--line-subtle);
+  font-size: 13.5px;
+}
+.diary-card-amt b {
+  font-size: 15px;
+}
+.diary-card-bal b {
+  font-size: 14px;
+}
+
+/* Detail Sheet */
+.diary-note-sheet {
+  display: flex;
+  flex-direction: column;
+}
+.diary-page-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--surface-2);
+  padding: 10px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+.diary-date-wrap {
+  display: flex;
+  flex-direction: column;
+}
+.diary-date-main {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--ink);
+}
+.diary-day {
+  font-size: 12px;
+  color: var(--muted);
+}
+.diary-shree {
+  font-weight: 800;
+  color: #dc2626;
+  font-size: 16px;
+  letter-spacing: 2px;
+}
+.diary-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+  padding: 0 4px;
+}
+.diary-amt-banner {
+  background: linear-gradient(135deg, var(--surface-2), var(--surface-3));
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  text-align: center;
+  margin-bottom: 14px;
+}
+.diary-amt-banner .k {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.diary-amt-banner .v {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--ink);
+  margin-top: 2px;
+}
+.diary-items-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.diary-items-title {
+  background: var(--surface-2);
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  border-bottom: 1px solid var(--line);
+}
+.diary-items-list {
+  display: flex;
+  flex-direction: column;
+}
+.diary-item-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-subtle);
+  font-size: 13.5px;
+}
+.diary-item-row:last-child {
+  border-bottom: none;
+}
+.diary-item-num {
+  font-weight: 700;
+  color: var(--brand, #ea580c);
+  font-size: 15px;
+  line-height: 1.2;
+}
+.diary-item-body {
+  flex: 1;
+}
+.diary-item-name {
+  color: var(--ink);
+  font-size: 13.5px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.diary-item-calc {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.diary-item-amt {
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 14px;
+  white-space: nowrap;
+}
+.diary-totals-summary {
+  background: var(--surface-2);
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.diary-totals-summary > div {
+  display: flex;
+  justify-content: space-between;
+}
+.diary-totals-summary .diary-gt {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+  padding-top: 4px;
+  border-top: 1px dashed var(--line);
+  margin-top: 2px;
+}
+.note-items-preview {
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.chip-note {
+  background: rgba(14, 165, 233, 0.12);
+  color: #0284c7;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+
 
 

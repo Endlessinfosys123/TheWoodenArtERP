@@ -509,6 +509,7 @@ function vHome(){
     <button class="tile" style="text-align:left;cursor:pointer;color:inherit" data-act="goto" data-v="vendors" data-g="vendors" data-s="bills"><div class="k">To pay (vendor bills)</div><div class="v num">${inrShort(pay)}</div></button>
   </div>`;
   if(S.canWrite && !S.offline) h += `<div class="quick">
+    <button data-act="newWorkNote"><span class="ic">${svg("doc")}</span>Work Entry</button>
     <button data-act="newInvoice"><span class="ic">${svg("doc")}</span>Invoice</button>
     <button data-act="newQuote"><span class="ic">${svg("quote")}</span>Quotation</button>
     <button data-act="openBankStatement"><span class="ic">${svg("receipt")}</span>Statement</button>
@@ -561,7 +562,13 @@ function vSales(){
     if(S.invoices.length) h += `<p class="small muted" style="margin:0 0 8px">Pending to receive: <b class="num" style="color:var(--ink)">${inr(recv)}</b></p>`;
     h += !S.invoices.length ? emptyBox("No invoices yet","Create a GST or simple invoice, download it as PDF and share on WhatsApp.","newInvoice","New invoice")
       : !list.length ? `<p class="muted">No invoice matches “${esc(S.q.inv)}”.</p>`
-      : `<div class="list">${list.map(i=>{ const st=invStatus(i); const sName = i.site||i.client?.site; return `<button class="row" data-act="openInvoice" data-id="${i.id}"><div class="av n">${esc(initials(i.client?.name))}</div><div class="main"><div class="t">${esc(i.client?.name||"Client")}${sName ? ` <span class="muted" style="font-size:12px;font-weight:normal">(${esc(sName)})</span>` : ""}</div><div class="s"><span class="mono">${esc(i.no)}</span> · ${fmtDate(i.date)}${i.gstMode==="gst"?" · GST":""}</div></div><div class="amt"><b>${inr(i.total)}</b><span class="chip ${st}">${st}</span></div></button>`; }).join("")}</div>`;
+      : `<div class="list">${list.map(i=>{
+          const isNote = !!i.isNote;
+          const st = invStatus(i);
+          const sName = i.site || i.client?.site;
+          const act = isNote ? `data-act="openWorkNote" data-id="${i.id}"` : `data-act="openInvoice" data-id="${i.id}"`;
+          return `<button class="row" ${act}><div class="av ${isNote?'in':'n'}">${isNote ? '📝' : esc(initials(i.client?.name))}</div><div class="main"><div class="t">${isNote ? `<span class="chip-note" style="font-size:10px;padding:1px 5px;margin-right:4px">Note</span>` : ''}${esc(i.client?.name||"Client")}${sName ? ` <span class="muted" style="font-size:12px;font-weight:normal">(${esc(sName)})</span>` : ""}</div><div class="s"><span class="mono">${esc(i.no)}</span> · ${fmtDate(i.date)}${i.gstMode==="gst"?" · GST":""}</div></div><div class="amt"><b>${inr(i.total)}</b><span class="chip ${st}">${st}</span></div></button>`;
+        }).join("")}</div>`;
   } else {
     const list = S.quotes.filter(q=>match("quo", q.no, q.client?.name, q.site||q.client?.site)).sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.seq||0)-(a.seq||0));
     h += `<div class="bar">${searchBar("quo","Search quotation no., client or site")}</div>`;
@@ -905,13 +912,16 @@ function readItems(form){
 }
 function interOf(form){ const cs=form.cstate?.value, ms=S.settings.state; return !!(cs && ms && cs!==ms); }
 function recalcForm(){
-  const form=$("#docForm"); if(!form) return;
-  const gst = form.gstMode.value==="gst"; const items=readItems(form); const inter=gst && interOf(form);
+  const form = $("#workNoteForm") || $("#docForm"); if(!form) return;
+  const isWorkNote = form.id === "workNoteForm";
+  const gst = isWorkNote ? false : (form.gstMode?.value === "gst");
+  const items = readItems(form);
+  const inter = gst && interOf(form);
   const discountVal = form.discount ? form.discount.value.trim() : "";
   const roundOffVal = form.roundOff ? form.roundOff.value.trim() : "";
   const hasManualRoundOff = roundOffVal !== "";
   const c = calc({
-    gstMode: form.gstMode.value,
+    gstMode: gst ? "gst" : "none",
     inter,
     items,
     discount: discountVal,
@@ -921,16 +931,23 @@ function recalcForm(){
   if(form.roundOff && !hasManualRoundOff){
     form.roundOff.placeholder = `Auto (${c.autoRoundOff >= 0 ? "+" : ""}${c.autoRoundOff.toFixed(2)})`;
   }
-  $$(".item",form).forEach(r=>{ const it=readRow(r); const a=lineAmt(it); const g = gst ? r2(a*(it.gst||0)/100):0;
+  $$(".item",form).forEach(r=>{
+    const it=readRow(r);
+    const a=lineAmt(it);
+    const g = gst ? r2(a*(it.gst||0)/100):0;
     const area = it.pricing==="sqft" ? `${it.sqft.toFixed(2)} sq.ft${it.rate?` × ${inr(it.rate,2)}`:""}` : "";
-    $(".lineamt",r).textContent = (area||a) ? [area, a?`Amount ${inr(a,2)}${gst&&g?` + GST ${inr(g,2)}`:""}`:""].filter(Boolean).join("  =  ") : ""; });
-  let t = (c.area ? `<div class="muted"><span>Total area</span><span>${c.area.toFixed(2)} sq.ft</span></div>` : "") + `<div><span>Subtotal</span><span>${inr(c.sub,2)}</span></div>`;
-  if(gst){ t += inter ? `<div><span>IGST</span><span>${inr(c.igst,2)}</span></div>` : `<div><span>CGST</span><span>${inr(c.cgst,2)}</span></div><div><span>SGST</span><span>${inr(c.sgst,2)}</span></div>`; }
-  if(c.discount) t += `<div style="color:var(--good,#15803d)"><span>Discount</span><span>-${inr(c.discount,2)}</span></div>`;
-  if(c.roundOff) t += `<div class="muted"><span>Round off ${c.hasManualRoundOff?"(manual)":""}</span><span>${c.roundOff>0?"+":""}${c.roundOff.toFixed(2)}</span></div>`;
-  t += `<div class="gt"><span>Total</span><span>${inr(c.total)}</span></div>`;
-  if(gst && !S.settings.state) t += `<p class="small muted" style="margin:6px 0 0">Tip: set your company state in Settings so CGST/SGST vs IGST is picked automatically.</p>`;
-  $("#totals").innerHTML = t;
+    $(".lineamt",r).textContent = (area||a) ? [area, a?`Amount ${inr(a,2)}${gst&&g?` + GST ${inr(g,2)}`:""}`:""].filter(Boolean).join("  =  ") : "";
+  });
+  const totalsEl = $("#totals", form) || $("#totals");
+  if(totalsEl){
+    let t = (c.area ? `<div class="muted"><span>Total area</span><span>${c.area.toFixed(2)} sq.ft</span></div>` : "") + `<div><span>Subtotal</span><span>${inr(c.sub,2)}</span></div>`;
+    if(gst){ t += inter ? `<div><span>IGST</span><span>${inr(c.igst,2)}</span></div>` : `<div><span>CGST</span><span>${inr(c.cgst,2)}</span></div><div><span>SGST</span><span>${inr(c.sgst,2)}</span></div>`; }
+    if(c.discount) t += `<div style="color:var(--good,#15803d)"><span>Discount</span><span>-${inr(c.discount,2)}</span></div>`;
+    if(c.roundOff) t += `<div class="muted"><span>Round off ${c.hasManualRoundOff?"(manual)":""}</span><span>${c.roundOff>0?"+":""}${c.roundOff.toFixed(2)}</span></div>`;
+    t += `<div class="gt"><span>Total</span><span>${inr(c.total)}</span></div>`;
+    if(gst && !S.settings.state) t += `<p class="small muted" style="margin:6px 0 0">Tip: set your company state in Settings so CGST/SGST vs IGST is picked automatically.</p>`;
+    totalsEl.innerHTML = t;
+  }
 }
 async function saveDoc(form){
   const kind=form.dataset.kind, id=form.dataset.id, isQ=kind==="quote";
@@ -986,8 +1003,424 @@ async function saveDoc(form){
       }
     }
     if(fromQ) await write(()=>S.db.collection("quotes").doc(fromQ.id).update({status:"accepted", invoiceId:ref.id, invoiceNo:doc.no}));
+    if(S._fromNoteId){
+      const nid = S._fromNoteId; S._fromNoteId = null;
+      await S.db.collection("invoices").doc(nid).delete().catch(()=>{});
+      const nIdx = S.invoices.findIndex(x => x.id === nid);
+      if(nIdx !== -1) S.invoices.splice(nIdx, 1);
+    }
     closeSheet(); (isQ?dQuote:dInvoice)(ref.id);
   }
+}
+
+function getDayOfWeek(dateStr){
+  if(!dateStr) return "";
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString("en-US", { weekday: "long" });
+}
+
+function nextNoteNo(date){
+  const notes = (S.invoices||[]).filter(x => x.isNote);
+  const maxSeq = Math.max(0, ...notes.map(x => {
+    const m = (x.no||"").match(/(\d+)\s*$/);
+    return m ? +m[1] : 0;
+  }));
+  return `NOTE-${maxSeq + 1}`;
+}
+
+function workNoteForm(existing, clientId, defaultSite){
+  const d = existing ? JSON.parse(JSON.stringify(existing)) : null;
+  const isEdit = !!(d && d.id);
+  const clientObj = clientId ? S.clients.find(x => x.id === clientId) : (d?.client?.name ? (clientNames().get(d.client.name) || S.clients.find(x => (x.name||"").trim().toLowerCase() === (d.client.name||"").trim().toLowerCase())) : null);
+  const cName = clientObj?.name || d?.client?.name || "";
+  const clientSites = clientObj ? getClientSites(clientObj) : [];
+  const siteVal = d?.site || d?.client?.site || defaultSite || "";
+  const dateVal = d?.date || today();
+  const noteNoVal = d?.no || nextNoteNo(dateVal);
+  const items = d?.items?.length ? d.items : [{}];
+  const discountVal = (d?.discount !== undefined && d?.discount !== null && +d.discount > 0) ? d.discount : "";
+  const roundOffVal = (d?.hasManualRoundOff && d?.roundOff !== undefined && d?.roundOff !== null) ? d.roundOff : "";
+
+  const body = `
+  <form id="workNoteForm" data-form="workNote" data-id="${d?.id || ""}" autocomplete="off">
+    <div style="background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <div>
+        <div style="font-weight:700;font-size:14px;color:var(--ink)">📓 Direct Work Entry / Note (खाता डायरी एंट्री)</div>
+        <div class="small muted" style="margin-top:2px">Bina invoice banaye direct client ledger me entry karein · Material, thickness & sq.ft calculations</div>
+      </div>
+      <div style="font-weight:800;color:#dc2626;font-size:15px;letter-spacing:1px">॥ श्री ॥</div>
+    </div>
+
+    <div class="fg">
+      <label class="f full"><span>Client name</span>
+        <input name="cname" id="docClientName" list="clientList" required value="${esc(cName)}" placeholder="Type or select client">
+      </label>
+      <label class="f"><span>Date</span><input name="date" type="date" required value="${esc(dateVal)}"></label>
+      <label class="f"><span>Note / Diary Page #</span><input name="no" required value="${esc(noteNoVal)}" placeholder="e.g. 234 or NOTE-101"></label>
+    </div>
+
+    <div class="f full" style="margin-top:6px">
+      <label for="csiteSelect" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="font-weight:600">Site / Side name <span class="small muted">(Optional)</span></span>
+        <span class="small muted">Leave blank if site is not known yet</span>
+      </label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="csiteSelect" name="csiteSelect" style="flex:1;min-width:170px;height:38px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);padding:0 8px;font-size:13.5px;font-weight:600">
+          <option value="">${clientSites.length ? `-- Choose site (${clientSites.length}) or leave unassigned --` : "-- No saved sites (Optional) --"}</option>
+          ${clientSites.map(s => `<option value="${esc(s)}" ${s.toLowerCase()===siteVal.toLowerCase()?"selected":""}>${esc(s)}</option>`).join("")}
+          <option value="__custom" ${siteVal && !clientSites.some(s => s.toLowerCase() === siteVal.toLowerCase()) ? "selected" : ""}>+ Add / Custom Site…</option>
+        </select>
+        <input name="csite" id="csiteInput" placeholder="Site name (e.g. Bungalow 402, Living Room)" value="${esc(siteVal)}" style="flex:1;min-width:170px;height:38px">
+      </div>
+      <div id="csiteChips" class="thick-hints" style="margin-top:6px;gap:6px">
+        ${clientSites.map(s => `<button type="button" class="th-chip ${s.toLowerCase()===siteVal.toLowerCase()?'active':''}" data-act="pickDocSite" data-site="${esc(s)}">📍 ${esc(s)}</button>`).join("")}
+      </div>
+    </div>
+
+    <div class="legend-s" style="margin-top:14px">Material & Work Items</div>
+    <div class="items" id="items">${items.map(it => itemRow(it, false)).join("")}</div>
+    <button type="button" class="btn sm" style="margin-top:10px" data-act="addItem">${svg("plus")}Add item</button>
+
+    <div class="fg" style="margin-top:14px">
+      <label class="f"><span>Discount (₹)</span><input name="discount" type="number" inputmode="decimal" step="any" min="0" placeholder="0.00" value="${esc(discountVal)}"></label>
+      <label class="f"><span>Round off (₹)</span><input name="roundOff" type="number" inputmode="decimal" step="any" placeholder="Auto" value="${esc(roundOffVal)}"></label>
+    </div>
+
+    <div class="totals" id="totals"></div>
+
+    <div class="legend-s">Notes / Remarks</div>
+    <label class="f"><textarea name="notes" placeholder="e.g. Work done by Mistry Ramesh, pickup tomorrow, 2 sheets balance…">${esc(d?.notes ?? "")}</textarea></label>
+
+    <datalist id="clientList">${[...clientNames().keys()].map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
+    <datalist id="matList">${S.materials.map(m=>`<option value="${esc(m.name)}">`).join("")}</datalist>
+    <datalist id="unitList">${UNITS.map(u=>`<option value="${u}">`).join("")}</datalist>
+  </form>
+  `;
+
+  openSheet(isEdit ? `Edit Work Entry #${noteNoVal}` : "New Work Entry (Daily Note)", body, `
+    <button class="btn" data-act="close">Cancel</button>
+    <button class="btn pri" type="submit" form="workNoteForm">Save Entry</button>
+  `);
+  recalcForm();
+}
+
+async function saveWorkNote(form){
+  const id = form.dataset.id;
+  const items = readItems(form);
+  if(!items.length){ toast("Add at least one item."); return; }
+
+  const cname = form.cname.value.trim();
+  if(!cname){ toast("Please enter or select a client name."); return; }
+
+  let c = clientNames().get(cname) || S.clients.find(x => (x.name||"").trim().toLowerCase() === cname.toLowerCase());
+
+  const date = form.date.value || today();
+  const noteNo = form.no.value.trim() || nextNoteNo(date);
+  const siteVal = (form.csite?.value.trim()) || (form.csiteSelect && form.csiteSelect.value !== "__custom" ? form.csiteSelect.value.trim() : "");
+
+  const discountVal = form.discount ? form.discount.value.trim() : "";
+  const roundOffVal = form.roundOff ? form.roundOff.value.trim() : "";
+  const hasManualRoundOff = roundOffVal !== "";
+  const cCalc = calc({
+    gstMode: "none",
+    inter: false,
+    items,
+    discount: discountVal,
+    roundOff: hasManualRoundOff ? roundOffVal : undefined,
+    hasManualRoundOff
+  });
+
+  const existing = id ? S.invoices.find(x => x.id === id) : null;
+  const noteDoc = {
+    no: noteNo,
+    date,
+    fy: fyOf(date),
+    isNote: true,
+    gstMode: "none",
+    site: siteVal,
+    client: {
+      id: c?.id || "",
+      name: cname,
+      phone: c?.phone || "",
+      site: siteVal
+    },
+    items,
+    discount: cCalc.discount,
+    roundOff: cCalc.roundOff,
+    hasManualRoundOff,
+    notes: form.notes.value.trim(),
+    sub: cCalc.sub,
+    tax: 0,
+    total: cCalc.total,
+    payments: existing?.payments || [],
+    updatedAt: Date.now()
+  };
+  const m = noteDoc.no.match(/(\d+)\s*$/);
+  noteDoc.seq = m ? +m[1] : 0;
+
+  let ref;
+  const ok = await write(async () => {
+    if(!c){
+      const newCliRef = S.db.collection("clients").doc();
+      const newCliData = { name: cname, site: siteVal, createdAt: Date.now(), ...uidMeta() };
+      await newCliRef.set(newCliData);
+      c = { id: newCliRef.id, ...newCliData };
+      S.clients.push(c);
+      noteDoc.client.id = c.id;
+    }
+
+    if(id){
+      ref = S.db.collection("invoices").doc(id);
+      await ref.update(noteDoc);
+    } else {
+      ref = S.db.collection("invoices").doc();
+      await ref.set({ ...noteDoc, createdAt: Date.now(), ...uidMeta() });
+    }
+  }, id ? "Work entry updated" : "Work entry saved in client ledger");
+
+  if(!ok) return;
+
+  if(!id && !S.invoices.some(x => x.id === ref.id)){
+    S.invoices.unshift({ id: ref.id, ...noteDoc, createdAt: Date.now() });
+  } else if(id){
+    const idx = S.invoices.findIndex(x => x.id === id);
+    if(idx !== -1) Object.assign(S.invoices[idx], noteDoc);
+  }
+
+  closeSheet();
+  if(c?.id){
+    dClient(c.id);
+  } else if(ref?.id){
+    dWorkNote(ref.id);
+  }
+}
+
+function dWorkNote(id, refresh){
+  const d = S.invoices.find(x => x.id === id);
+  if(!d){ missing("invoice", id, refresh); return; }
+  const cl = d.client || {};
+  const siteName = d.site || cl.site;
+  const paid = paidOf(d);
+  const due = Math.max(0, r2((+d.total||0) - paid));
+
+  const numMatch = (d.no || "").match(/\d+/);
+  const circleNum = numMatch ? numMatch[0] : (d.no || "1");
+
+  let b = `
+  <div class="diary-note-sheet">
+    <div class="diary-page-top">
+      <div class="diary-date-wrap">
+        <span class="diary-date-main">${fmtDate(d.date)}</span>
+        <span class="diary-day">${getDayOfWeek(d.date)}</span>
+      </div>
+      <div class="diary-shree">॥ श्री ॥</div>
+      <div class="diary-circle-badge" title="Note / Page No.">${esc(circleNum)}</div>
+    </div>
+
+    <div class="diary-meta-row">
+      <div>
+        <div class="small muted">CLIENT</div>
+        <div style="font-weight:700;font-size:16px;color:var(--ink)">${esc(cl.name || "Client")}</div>
+        ${cl.phone ? `<div class="small muted">${esc(cl.phone)}</div>` : ""}
+      </div>
+      <div style="text-align:right">
+        <div class="small muted">SITE / LOCATION</div>
+        ${siteName ? `<span class="chip-site" style="font-size:12px">📍 ${esc(siteName)}</span>` : `<span class="muted small">General (No site)</span>`}
+      </div>
+    </div>
+
+    <div class="diary-amt-banner">
+      <div class="k">TOTAL WORK AMOUNT</div>
+      <div class="v num">${inr(d.total)}</div>
+      ${paid > 0 ? `<div class="small" style="color:var(--good);margin-top:2px">Received: ${inr(paid)} · Balance: ${inr(due)}</div>` : ""}
+    </div>
+
+    <div class="diary-items-card">
+      <div class="diary-items-title">Material & Work Details (${d.items?.length || 0} items)</div>
+      <div class="diary-items-list">
+        ${(d.items || []).map((it, idx) => {
+          const a = lineAmt(it);
+          const circ = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩'][idx] || (idx+1)+'.';
+          return `
+          <div class="diary-item-row">
+            <div class="diary-item-num">${circ}</div>
+            <div class="diary-item-body">
+              <div class="diary-item-name">
+                ${it.material ? `<b>${esc(it.material)}${it.thick ? ` ${esc(it.thick)}mm` : ''}</b>` : ''}
+                ${it.desc ? `<span>${esc(it.desc)}</span>` : ''}
+              </div>
+              <div class="diary-item-calc small muted">
+                ${it.pricing === 'sqft' && it.l && it.w ? `
+                  ${it.l}″ × ${it.w}″ (${it.du||'in'}) · ${it.qty||1} pcs = ${(it.sqft||0).toFixed(2)} sq.ft @ ₹${it.rate||0}/sq.ft
+                ` : `
+                  ${it.qty||1} ${esc(it.unit || 'Nos')} @ ₹${it.rate||0}
+                `}
+              </div>
+            </div>
+            <div class="diary-item-amt num">${inr(a)}</div>
+          </div>
+          `;
+        }).join('')}
+      </div>
+
+      <div class="diary-totals-summary">
+        <div><span>Subtotal</span><span>${inr(d.sub || d.total)}</span></div>
+        ${d.discount ? `<div style="color:var(--good)"><span>Discount</span><span>-${inr(d.discount)}</span></div>` : ''}
+        ${d.roundOff ? `<div class="muted"><span>Round off</span><span>${d.roundOff > 0 ? '+' : ''}${d.roundOff.toFixed(2)}</span></div>` : ''}
+        <div class="diary-gt"><span>Grand Total</span><span>${inr(d.total)}</span></div>
+      </div>
+    </div>
+
+    ${d.notes ? `<div class="card" style="margin-top:10px;padding:8px 12px;font-size:13px"><span class="muted">Note:</span> ${esc(d.notes)}</div>` : ''}
+
+    <div class="actions" style="margin-top:14px;flex-wrap:wrap">
+      <button class="btn pri" data-act="shareNoteWhatsApp" data-id="${d.id}">${svg("wa")}Share on WhatsApp</button>
+      <button class="btn" data-act="convertNoteToInvoice" data-id="${d.id}">${svg("doc")}Convert to Invoice</button>
+      <button class="btn" data-act="pdfNoteSlip" data-id="${d.id}">${svg("dl")}Print Slip</button>
+      ${S.canWrite ? `<button class="btn" data-act="editWorkNote" data-id="${d.id}">${svg("edit")}Edit</button>` : ""}
+      ${S.canWrite ? `<button class="btn danger" data-act="delDoc" data-col="invoices" data-id="${d.id}">${svg("trash")}Delete</button>` : ""}
+    </div>
+  </div>
+  `;
+
+  openSheet(`Work Entry #${circleNum}`, b, "", { kind: "detail", type: "note", id });
+}
+
+function shareWorkNoteWhatsApp(id){
+  const d = S.invoices.find(x => x.id === id);
+  if(!d) return;
+  const cl = d.client || {};
+  const co = S.settings?.name || "The Wooden Art";
+  const numMatch = (d.no || "").match(/\d+/);
+  const circleNum = numMatch ? numMatch[0] : (d.no || "1");
+
+  let msg = `*॥ श्री ॥*\n`;
+  msg += `*DAILY WORK NOTE #${circleNum} — ${co.toUpperCase()}*\n`;
+  msg += `Client: *${cl.name || "Client"}*\n`;
+  msg += `Date: *${fmtDate(d.date)} (${getDayOfWeek(d.date)})*\n`;
+  if(d.site) msg += `Site: *${d.site}*\n`;
+  msg += `--------------------------------\n`;
+
+  (d.items || []).forEach((it, idx) => {
+    const circ = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩'][idx] || (idx+1)+'.';
+    const a = lineAmt(it);
+    const mat = [it.material, it.thick ? it.thick+'mm' : ''].filter(Boolean).join(' ');
+    const title = [mat, it.desc].filter(Boolean).join(' - ') || 'CNC Work';
+    let calcStr = "";
+    if(it.pricing === 'sqft' && it.l && it.w){
+      calcStr = `   Size: ${it.l}" x ${it.w}" (${it.qty||1} pcs) = ${(it.sqft||0).toFixed(2)} sq.ft @ Rs. ${it.rate}\n`;
+    } else if(it.rate){
+      calcStr = `   Qty: ${it.qty||1} ${it.unit||'Nos'} @ Rs. ${it.rate}\n`;
+    }
+    msg += `${circ} *${title}*\n${calcStr}   Amount: *Rs. ${pdfAmt(a)}*\n`;
+  });
+
+  msg += `--------------------------------\n`;
+  if(d.discount) msg += `Discount: -Rs. ${pdfAmt(d.discount)}\n`;
+  if(d.roundOff) msg += `Round off: ${d.roundOff > 0 ? '+' : ''}${d.roundOff.toFixed(2)}\n`;
+  msg += `*TOTAL WORK: Rs. ${pdfAmt(d.total)}*\n`;
+  msg += `--------------------------------\n`;
+
+  const cObj = cl.id ? S.clients.find(x => x.id === cl.id) : (cl.name ? S.clients.find(x => (x.name||"").trim().toLowerCase() === cl.name.trim().toLowerCase()) : null);
+  if(cObj){
+    const led = buildClientLedger(cObj);
+    if(led.closingBalance > 0){
+      msg += `*Net Account Balance Due: Rs. ${pdfAmt(led.closingBalance)}*\n`;
+    }
+  }
+  if(d.notes) msg += `Note: ${d.notes}\n`;
+  msg += `Thank you!`;
+
+  const ph = (cl.phone || "").replace(/\D/g, "");
+  const num = ph.length === 10 ? "91" + ph : ph;
+  window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
+}
+
+async function makeWorkNoteSlipPDF(id){
+  if(!window.jspdf){ toast("PDF tool did not load. Check internet and reopen."); return; }
+  const d = S.invoices.find(x => x.id === id);
+  if(!d) return;
+  toast("Generating slip PDF…");
+  const st = S.settings || {};
+  const cl = d.client || {};
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:"mm", format:"a5"});
+  const W=148, H=210, M=10;
+  const contentWidth = W - 2*M;
+  const ORANGE = [232, 128, 42];
+  const INK = [20, 20, 20];
+  const MUT = [90, 90, 90];
+  const pdfSafe = t => String(t||"").replace(/[×]/g,"x").replace(/[–—]/g,"-").replace(/[^\x20-\x7E\n]/g,"");
+
+  let y = 10;
+  doc.setFont("helvetica","bold"); doc.setFontSize(14); doc.setTextColor(...INK);
+  doc.text(pdfSafe(st.name || "THE WOODEN ART").toUpperCase(), M, y + 4);
+  y += 6;
+  doc.setFont("helvetica","normal"); doc.setFontSize(7.5); doc.setTextColor(...MUT);
+  if(st.phone) { doc.text("Phone: " + pdfSafe(st.phone), M, y + 3); y += 4; }
+
+  doc.setFillColor(...ORANGE);
+  doc.rect(M, y + 2, contentWidth, 1.5, "F");
+  y += 6;
+
+  doc.setFont("helvetica","bold"); doc.setFontSize(11); doc.setTextColor(...INK);
+  doc.text("WORK ENTRY / JOB SLIP", W/2, y + 4, {align:"center"});
+  y += 7;
+
+  doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.2);
+  doc.rect(M, y, contentWidth, 14, "S");
+  doc.line(M + contentWidth/2, y, M + contentWidth/2, y + 14);
+
+  doc.setFontSize(8); doc.setFont("helvetica","bold"); doc.setTextColor(...INK);
+  doc.text("CLIENT:", M + 2, y + 4);
+  doc.setFont("helvetica","normal");
+  doc.text(pdfSafe(cl.name || "Client"), M + 2, y + 8);
+  if(cl.phone) doc.text(pdfSafe(cl.phone), M + 2, y + 12);
+
+  doc.setFont("helvetica","bold");
+  doc.text("DETAILS:", M + contentWidth/2 + 2, y + 4);
+  doc.setFont("helvetica","normal");
+  doc.text("Note #: " + pdfSafe(d.no), M + contentWidth/2 + 2, y + 8);
+  doc.text("Date: " + fmtDate(d.date) + (d.site ? "  |  Site: " + pdfSafe(d.site) : ""), M + contentWidth/2 + 2, y + 12);
+
+  y += 18;
+
+  doc.setFillColor(240, 240, 240);
+  doc.rect(M, y, contentWidth, 6, "F");
+  doc.rect(M, y, contentWidth, 6, "S");
+  doc.setFont("helvetica","bold"); doc.setFontSize(7.5); doc.setTextColor(...INK);
+  doc.text("#", M + 2, y + 4.2);
+  doc.text("Item / Material", M + 8, y + 4.2);
+  doc.text("Dimensions / Qty", M + 68, y + 4.2);
+  doc.text("Rate", M + 104, y + 4.2, {align:"right"});
+  doc.text("Amount (Rs)", M + contentWidth - 2, y + 4.2, {align:"right"});
+
+  y += 6;
+  (d.items || []).forEach((it, idx) => {
+    if(y > H - 30){ doc.addPage(); y = 12; }
+    const a = lineAmt(it);
+    doc.setFont("helvetica","normal"); doc.setFontSize(7.5); doc.setTextColor(...INK);
+    doc.text(String(idx + 1), M + 2, y + 4.2);
+    const matDesc = [it.material ? `${it.material}${it.thick ? ` ${it.thick}mm` : ''}` : '', it.desc].filter(Boolean).join(' - ');
+    doc.text(pdfSafe(matDesc).slice(0, 32), M + 8, y + 4.2);
+    const calcStr = it.pricing === 'sqft' && it.l && it.w
+      ? `${it.l}x${it.w} (${it.qty||1}pcs = ${(it.sqft||0).toFixed(1)}sqft)`
+      : `${it.qty||1} ${it.unit||'Nos'}`;
+    doc.text(pdfSafe(calcStr), M + 68, y + 4.2);
+    doc.text(pdfAmt(it.rate), M + 104, y + 4.2, {align:"right"});
+    doc.text(pdfAmt(a), M + contentWidth - 2, y + 4.2, {align:"right"});
+    y += 5.5;
+  });
+
+  y += 2;
+  doc.setLineWidth(0.3); doc.line(M, y, M + contentWidth, y);
+  y += 4;
+  doc.setFont("helvetica","bold"); doc.setFontSize(9);
+  doc.text("Total Amount:", M + contentWidth - 45, y + 2);
+  doc.text("Rs. " + pdfAmt(d.total), M + contentWidth - 2, y + 2, {align:"right"});
+
+  doc.save(`Note_${pdfSafe(d.no)}_${today()}.pdf`);
+  toast("Slip downloaded");
 }
 
 /* ---------- detail: invoice / quote ---------- */
@@ -1006,6 +1439,7 @@ function docBody(d, kind){
 }
 function dInvoice(id, refresh){
   const d=S.invoices.find(x=>x.id===id); if(!d){ missing("invoice",id,refresh); return; }
+  if(d.isNote) return dWorkNote(id, refresh);
   const st=invStatus(d), paid=paidOf(d), due=r2((+d.total||0)-paid);
   const cl=d.client||{};
   const siteName = d.site || cl.site;
@@ -1936,17 +2370,18 @@ function buildClientLedger(c, siteFilter="all", periodFilter="all", searchFilter
 
   const allEntries = [];
 
-  // Invoices (Debits - Work done)
+  // Invoices & Work Notes (Debits - Work done)
   invs.forEach(inv => {
     const sName = (inv.site || inv.client?.site || "").trim();
+    const isNote = !!inv.isNote;
     allEntries.push({
       id: inv.id,
       date: inv.date || today(),
       type: "debit",
-      src: "invoice",
+      src: isNote ? "note" : "invoice",
       ref: inv.no,
       site: sName,
-      desc: `Invoice ${inv.no}${inv.items?.length ? ` (${inv.items.length} item${inv.items.length>1?'s':''})` : ''}`,
+      desc: isNote ? `Work Note #${inv.no}${inv.items?.length ? ` (${inv.items.length} item${inv.items.length>1?'s':''})` : ''}` : `Invoice ${inv.no}${inv.items?.length ? ` (${inv.items.length} item${inv.items.length>1?'s':''})` : ''}`,
       notes: inv.notes || "",
       debit: +inv.total || 0,
       credit: 0,
@@ -1966,7 +2401,7 @@ function buildClientLedger(c, siteFilter="all", periodFilter="all", searchFilter
         src: "inv_pay",
         ref: inv.no,
         site: pSite,
-        desc: `Payment for ${inv.no}${p.mode ? ` (${p.mode})` : ''}`,
+        desc: `Payment for ${isNote ? 'Note #' : ''}${inv.no}${p.mode ? ` (${p.mode})` : ''}`,
         notes: p.note || "",
         debit: 0,
         credit: +p.amount || 0,
@@ -2011,7 +2446,7 @@ function buildClientLedger(c, siteFilter="all", periodFilter="all", searchFilter
     if(!sitesSummary[key]) sitesSummary[key] = { billed: 0, received: 0, due: 0, invCount: 0 };
     if(e.type === "debit") {
       sitesSummary[key].billed += e.debit;
-      if(e.src === "invoice") sitesSummary[key].invCount++;
+      if(e.src === "invoice" || e.src === "note") sitesSummary[key].invCount++;
     } else {
       sitesSummary[key].received += e.credit;
     }
@@ -2045,10 +2480,13 @@ function buildClientLedger(c, siteFilter="all", periodFilter="all", searchFilter
     periodEntries = filtered.filter(e => (e.date || "") >= startDate);
   }
 
-  // Apply search query within description / ref / note
+  // Apply search query within description / ref / note / items
   if(searchFilter && searchFilter.trim()){
     const q = searchFilter.trim().toLowerCase();
-    periodEntries = periodEntries.filter(e => (e.ref||"").toLowerCase().includes(q) || (e.desc||"").toLowerCase().includes(q) || (e.notes||"").toLowerCase().includes(q) || (e.site||"").toLowerCase().includes(q));
+    periodEntries = periodEntries.filter(e => {
+      const inItems = e.raw?.items?.some(it => (it.material||"").toLowerCase().includes(q) || (it.desc||"").toLowerCase().includes(q));
+      return (e.ref||"").toLowerCase().includes(q) || (e.desc||"").toLowerCase().includes(q) || (e.notes||"").toLowerCase().includes(q) || (e.site||"").toLowerCase().includes(q) || inItems;
+    });
   }
 
   // Compute running balance
@@ -3296,7 +3734,8 @@ function dClient(id, refresh){
   </div>
 
   <div class="cli-quick-acts">
-    ${S.canWrite ? `<button class="btn pri" data-act="clientPay" data-id="${id}" data-site="${esc(cs.site!=="all"?cs.site:"")}">${svg("down")}Receive Payment</button>` : ""}
+    ${S.canWrite ? `<button class="btn pri" data-act="newWorkNoteForClient" data-id="${id}" data-site="${esc(cs.site!=="all"?cs.site:"")}">${svg("doc")}Direct Work Entry</button>` : ""}
+    ${S.canWrite ? `<button class="btn" data-act="clientPay" data-id="${id}" data-site="${esc(cs.site!=="all"?cs.site:"")}">${svg("down")}Receive Payment</button>` : ""}
     ${S.canWrite ? `<button class="btn" data-act="newInvoiceForClient" data-id="${id}" data-site="${esc(cs.site!=="all"?cs.site:"")}">${svg("plus")}New Invoice</button>` : ""}
     <button class="btn" data-act="waClientLedger" data-id="${id}" data-site="${esc(cs.site)}" data-period="${esc(cs.period)}">${svg("wa")}Share Statement</button>
     <button class="btn" data-act="pdfClientLedger" data-id="${id}" data-site="${esc(cs.site)}" data-period="${esc(cs.period)}">${svg("dl")}PDF Statement</button>
@@ -3313,15 +3752,16 @@ function dClient(id, refresh){
   `;
 
   if(cs.tab === "ledger"){
+    const viewMode = cs.viewMode || "diary";
     b += `
-    <div class="cli-toolbar">
+    <div class="cli-toolbar" style="flex-wrap:wrap;gap:8px">
       <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted)">
         Site:
         <select class="cli-filter-select" data-act="cliSiteFilter" data-id="${id}">
           <option value="all" ${cs.site==="all"?"selected":""}>All Sites (${allSites.length})</option>
           ${allSites.map(s => {
             const st = ledger.sitesSummary[s] || {};
-            return `<option value="${esc(s)}" ${cs.site===s?"selected":""}>${esc(s)} (${st.invCount||0} inv · ${inr(st.due||0)} due)</option>`;
+            return `<option value="${esc(s)}" ${cs.site===s?"selected":""}>${esc(s)} (${st.invCount||0} jobs · ${inr(st.due||0)} due)</option>`;
           }).join("")}
         </select>
       </label>
@@ -3334,6 +3774,10 @@ function dClient(id, refresh){
           <option value="last_90" ${cs.period==="last_90"?"selected":""}>Last 90 Days</option>
         </select>
       </label>
+      <div class="seg sm" role="group" style="margin-left:auto">
+        <button type="button" data-act="cliViewMode" data-id="${id}" data-mode="diary" aria-pressed="${viewMode==='diary'}">📓 Diary View</button>
+        <button type="button" data-act="cliViewMode" data-id="${id}" data-mode="table" aria-pressed="${viewMode==='table'}">📊 Table</button>
+      </div>
       ${cs.site!=="all" || cs.period!=="all" ? `<button class="btn sm" data-act="filterToSite" data-id="${id}" data-site="all" style="padding:4px 8px">Clear filters</button>` : ""}
     </div>
     `;
@@ -3341,9 +3785,87 @@ function dClient(id, refresh){
     if(!ledger.entries.length){
       b += `<div class="card" style="text-align:center;padding:26px 14px;color:var(--muted)">
         <p style="margin:0 0 10px;font-size:14px">No work or payment entries match this selection.</p>
-        <button class="btn sm pri" data-act="newInvoiceForClient" data-id="${id}" data-site="${esc(cs.site!=="all"?cs.site:"")}">+ New Invoice</button>
+        <button class="btn sm pri" data-act="newWorkNoteForClient" data-id="${id}" data-site="${esc(cs.site!=="all"?cs.site:"")}">+ Direct Work Entry</button>
+        <button class="btn sm" data-act="newInvoiceForClient" data-id="${id}" data-site="${esc(cs.site!=="all"?cs.site:"")}" style="margin-left:6px">+ New Invoice</button>
         <button class="btn sm" data-act="clientPay" data-id="${id}" data-site="${esc(cs.site!=="all"?cs.site:"")}" style="margin-left:6px">+ Receive Payment</button>
       </div>`;
+    } else if(viewMode === "diary"){
+      b += `
+      <div class="diary-view-list">
+        ${ledger.openingBalance !== 0 ? `
+          <div class="card" style="background:var(--surface-2);padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+            <div><b style="color:var(--ink)">Opening Balance B/F (${cs.period})</b></div>
+            <div class="amt-bal num" style="font-size:15px;font-weight:800;color:var(--${ledger.openingBalance>0?'bad':'good'})">${inr(ledger.openingBalance)}</div>
+          </div>
+        ` : ""}
+        ${ledger.entries.map(e => {
+          const isDebit = e.type === "debit";
+          const isNote = e.src === "note";
+          const isInv = e.src === "invoice";
+          const act = isNote ? `data-act="openWorkNote" data-id="${e.id}"` :
+                      (isInv ? `data-act="openInvoice" data-id="${e.id}"` :
+                      (e.src === "inv_pay" ? `data-act="openInvoice" data-id="${e.invId}"` :
+                      (e.src === "txn" ? `data-act="openTxn" data-id="${e.id}"` : "")));
+          const numMatch = (e.ref || "").match(/\d+/);
+          const circleNum = numMatch ? numMatch[0] : (e.ref || "1");
+          const items = e.raw?.items || [];
+
+          return `
+          <div class="diary-card ${isDebit ? 'diary-debit' : 'diary-credit'}" ${act} style="cursor:pointer">
+            <div class="diary-card-hd">
+              <div class="diary-card-date">
+                <span class="diary-card-cal">${fmtDate(e.date)}</span>
+                <span class="diary-card-day muted">${getDayOfWeek(e.date)}</span>
+              </div>
+              <div class="diary-card-shree">॥ श्री ॥</div>
+              <div class="diary-card-badge">
+                ${isNote ? `<span class="diary-circle-badge sm" title="Note #${esc(circleNum)}">${esc(circleNum)}</span>` : `<span class="chip-site" style="font-size:11px">${esc(e.ref)}</span>`}
+              </div>
+            </div>
+
+            <div class="diary-card-site-row">
+              ${e.site ? `<span class="chip-site" style="font-size:11px">📍 ${esc(e.site)}</span>` : `<span class="muted small">General (No site)</span>`}
+              <span class="small muted">${isNote ? '<span class="chip-note">📝 Work Note</span>' : (isInv ? '🧾 Tax Invoice' : (isDebit ? 'Debit Adjustment' : `💵 Payment (${e.mode||'Received'})`))}</span>
+            </div>
+
+            ${isDebit && items.length ? `
+              <div class="diary-card-items">
+                ${items.map((it, idx) => {
+                  const circ = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩'][idx] || (idx+1)+'.';
+                  const a = lineAmt(it);
+                  const matDesc = [it.material ? `${it.material}${it.thick ? ` ${it.thick}mm` : ''}` : '', it.desc].filter(Boolean).join(' · ');
+                  const calcStr = it.pricing === 'sqft' && it.l && it.w
+                    ? `(${it.l}″×${it.w}″, ${it.qty||1} pcs = ${(it.sqft||0).toFixed(2)} sqft @ ₹${it.rate})`
+                    : (it.rate ? `(${it.qty||1} ${it.unit||'Nos'} @ ₹${it.rate})` : '');
+                  return `
+                    <div class="diary-card-item-line">
+                      <span class="circ">${circ}</span>
+                      <span class="item-desc"><b>${esc(matDesc || 'Item')}</b> ${calcStr ? `<span class="muted small">${esc(calcStr)}</span>` : ''}</span>
+                      <span class="item-amt num">= ${inr(a)}</span>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            ` : `
+              <div style="font-weight:600;font-size:13.5px;color:var(--ink);margin:6px 0">${esc(e.desc)} ${e.notes ? `<span class="small muted">(${esc(e.notes)})</span>` : ''}</div>
+            `}
+
+            <div class="diary-card-ft">
+              <div class="diary-card-amt">
+                <span class="small muted">${isDebit ? 'Work Total:' : 'Received:'}</span>
+                <b class="num" style="color:var(--${isDebit ? 'ink' : 'good'})">${inr(isDebit ? e.debit : e.credit)}</b>
+              </div>
+              <div class="diary-card-bal">
+                <span class="small muted">Balance:</span>
+                <b class="num" style="color:var(--${e.balance > 0 ? 'bad' : 'good'})">${inr(e.balance)}</b>
+              </div>
+            </div>
+          </div>
+          `;
+        }).join('')}
+      </div>
+      <p class="small muted" style="margin:10px 0 0">💡 Tap on any diary card or payment to view complete details, share on WhatsApp, or convert to invoice.</p>
+      `;
     } else {
       b += `
       <div class="cli-tbl-wrap">
@@ -3352,7 +3874,7 @@ function dClient(id, refresh){
             <tr>
               <th>Date</th>
               <th>Site / Side</th>
-              <th>Particulars</th>
+              <th>Particulars & Items</th>
               <th class="r">Debit (Work)</th>
               <th class="r">Credit (Paid)</th>
               <th class="r">Balance</th>
@@ -3371,17 +3893,34 @@ function dClient(id, refresh){
             ` : ""}
             ${ledger.entries.map(e => {
               const isDebit = e.type === "debit";
-              const rowAct = e.src === "invoice" ? `data-act="openInvoice" data-id="${e.id}" style="cursor:pointer"` :
+              const isNote = e.src === "note";
+              const rowAct = isNote ? `data-act="openWorkNote" data-id="${e.id}" style="cursor:pointer"` :
+                             (e.src === "invoice" ? `data-act="openInvoice" data-id="${e.id}" style="cursor:pointer"` :
                              (e.src === "inv_pay" ? `data-act="openInvoice" data-id="${e.invId}" style="cursor:pointer"` :
-                             (e.src === "txn" ? `data-act="openTxn" data-id="${e.id}" style="cursor:pointer"` : ""));
+                             (e.src === "txn" ? `data-act="openTxn" data-id="${e.id}" style="cursor:pointer"` : "")));
               const balClass = e.balance > 0 ? "bal-pos" : (e.balance < 0 ? "bal-adv" : "bal-zero");
+              const items = e.raw?.items || [];
               return `
                 <tr class="${isDebit ? "row-debit" : "row-credit"}" ${rowAct}>
                   <td>${fmtDate(e.date)}</td>
                   <td>${e.site ? `<span class="chip-site">${esc(e.site)}</span>` : `<span class="muted">—</span>`}</td>
                   <td>
-                    <div style="font-weight:600;color:var(--ink)">${esc(e.desc)}</div>
-                    ${e.notes ? `<div class="small muted">${esc(e.notes)}</div>` : ""}
+                    <div style="font-weight:600;color:var(--ink);display:flex;align-items:center;gap:6px">
+                      ${isNote ? `<span class="chip-note">📝 Note #${esc(e.ref)}</span>` : (e.src==="invoice" ? `<span class="mono" style="font-weight:700">Inv #${esc(e.ref)}</span>` : "")}
+                      <span>${esc(e.desc)}</span>
+                    </div>
+                    ${items.length ? `
+                      <div class="note-items-preview">
+                        ${items.slice(0, 4).map((it, idx) => {
+                          const circ = ['①','②','③','④'][idx] || (idx+1)+'.';
+                          const mat = [it.material, it.thick ? it.thick+'mm' : ''].filter(Boolean).join(' ');
+                          const calcStr = it.pricing === 'sqft' && it.l && it.w ? `(${it.l}″×${it.w}″)` : `(${it.qty||1}${it.unit||'Nos'})`;
+                          return `<div>${circ} <b>${esc(mat || it.desc || 'Item')}</b> ${esc(calcStr)} · ${inr(lineAmt(it))}</div>`;
+                        }).join('')}
+                        ${items.length > 4 ? `<div class="muted small">+ ${items.length - 4} more items…</div>` : ''}
+                      </div>
+                    ` : ""}
+                    ${e.notes ? `<div class="small muted" style="margin-top:2px">${esc(e.notes)}</div>` : ""}
                   </td>
                   <td class="amt-debit">${e.debit > 0 ? inr(e.debit) : '<span class="muted">—</span>'}</td>
                   <td class="amt-credit">${e.credit > 0 ? inr(e.credit) : '<span class="muted">—</span>'}</td>
@@ -3957,6 +4496,45 @@ document.addEventListener("click", async e => {
     case "dbSettings": databaseSettingsSheet(); break;
     case "newInvoice": docForm("invoice"); break;
     case "newQuote": docForm("quote"); break;
+    case "newWorkNote": workNoteForm(); break;
+    case "newWorkNoteForClient": {
+      const c = S.clients.find(x => x.id === id);
+      const sitePref = el.dataset.site || c?.site || "";
+      workNoteForm(null, id, sitePref);
+      break;
+    }
+    case "openWorkNote": dWorkNote(id); break;
+    case "editWorkNote": {
+      const d = S.invoices.find(x => x.id === id);
+      if(d) workNoteForm(d);
+      break;
+    }
+    case "convertNoteToInvoice": {
+      const d = S.invoices.find(x => x.id === id);
+      if(!d) break;
+      confirmSheet(`Convert Work Note #${d.no} into a formal Invoice?`, () => {
+        const copy = JSON.parse(JSON.stringify(d));
+        const origId = copy.id;
+        delete copy.id;
+        delete copy.isNote;
+        copy.date = today();
+        docForm("invoice", copy);
+        S._fromNoteId = origId;
+      }, "Convert");
+      break;
+    }
+    case "shareNoteWhatsApp": shareWorkNoteWhatsApp(id); break;
+    case "pdfNoteSlip": makeWorkNoteSlipPDF(id); break;
+    case "cliViewMode": {
+      const cId = el.dataset.id;
+      if(cId){
+        S.cliState = S.cliState || {};
+        S.cliState[cId] = S.cliState[cId] || {};
+        S.cliState[cId].viewMode = el.dataset.mode;
+        dClient(cId, true);
+      }
+      break;
+    }
     case "editInvoice": docForm("invoice", S.invoices.find(x=>x.id===id)); break;
     case "editQuote": docForm("quote", S.quotes.find(x=>x.id===id)); break;
     case "dupInvoice": { const d=S.invoices.find(x=>x.id===id); if(d){ const c={...JSON.parse(JSON.stringify(d)), id:"", date:today(), dueDate:""}; delete c.id; docForm("invoice", null); fillDocForm(c); } break; }
@@ -4028,7 +4606,7 @@ document.addEventListener("click", async e => {
       break;
     }
     case "pickDocSite": {
-      const f = $("#docForm");
+      const f = el.closest("form") || $("#workNoteForm") || $("#docForm");
       if(!f) break;
       const site = el.dataset.site || "";
       if(f.csite) f.csite.value = site;
@@ -4038,7 +4616,7 @@ document.addEventListener("click", async e => {
         else if(site) f.csiteSelect.value = "__custom";
         else f.csiteSelect.value = "";
       }
-      $$("#csiteChips button").forEach(b => b.classList.toggle("active", (b.dataset.site||"").toLowerCase() === site.toLowerCase()));
+      $$("#csiteChips button", f).forEach(b => b.classList.toggle("active", (b.dataset.site||"").toLowerCase() === site.toLowerCase()));
       break;
     }
     case "cliTab": {
@@ -4143,9 +4721,28 @@ document.addEventListener("click", async e => {
     case "delBill": { const d=S.bills.find(x=>x.id===id); confirmSheet(`Delete bill <b>${esc(d?.billNo||"")}</b> of ${inr(d?.amount)}? Its payments will also be removed from expenses.`, async()=>{ const ok=await write(()=>S.db.collection("bills").doc(id).delete(),"Deleted"); if(ok){ await deleteAssets(d?.files); closeSheet(); } }); break; }
     case "confirmYes": { const f=S._confirm; S._confirm=null; el.disabled=true; if(f) await f(); break; }
     case "mode": { const f=$("#docForm"); const v=el.dataset.v; f.gstMode.value=v; $$("[data-act=mode]",f).forEach(b=>b.setAttribute("aria-pressed", b.dataset.v===v)); $$(".gstonly",f).forEach(x=>x.hidden = v!=="gst"); recalcForm(); break; }
-    case "addItem": { const rows0=$$(".item"); const prev = rows0.length ? readRow(rows0[rows0.length-1]) : null; $("#items").insertAdjacentHTML("beforeend", itemRow({}, $("#docForm").gstMode.value==="gst", prev ? {pricing:prev.pricing, du:prev.du, material:prev.material, thick:prev.thick} : null)); const rows=$$(".item"); const last=rows[rows.length-1]; ($("[name=l]", last).offsetParent ? $("[name=l]", last) : $("[name=desc]", last)).focus(); recalcForm(); break; }
+    case "addItem": {
+      const f = el.closest("form") || $("#workNoteForm") || $("#docForm");
+      const itemsContainer = f ? ($("#items", f) || $("#items")) : $("#items");
+      const rows0 = $$(".item", itemsContainer);
+      const prev = rows0.length ? readRow(rows0[rows0.length-1]) : null;
+      const isGst = f?.gstMode?.value === "gst";
+      itemsContainer.insertAdjacentHTML("beforeend", itemRow({}, isGst, prev ? {pricing:prev.pricing, du:prev.du, material:prev.material, thick:prev.thick} : null));
+      const rows = $$(".item", itemsContainer);
+      const last = rows[rows.length-1];
+      ($("[name=l]", last).offsetParent ? $("[name=l]", last) : $("[name=desc]", last)).focus();
+      recalcForm();
+      break;
+    }
     case "pricing": { const r=el.closest(".item"); const v=el.dataset.v; r.dataset.pricing=v; $("[name=pricing]",r).value=v; $$("[data-act=pricing]",r).forEach(b=>b.setAttribute("aria-pressed", b.dataset.v===v)); $(".qlbl",r).textContent = v==="sqft"?"Pieces":"Qty"; $(".rlbl",r).textContent = v==="sqft"?"Rate / sq.ft (₹)":"Rate (₹)"; recalcForm(); break; }
-    case "rmItem": { const rows=$$(".item"); if(rows.length>1) el.closest(".item").remove(); else $$("input",rows[0]).forEach(i=>{ if(i.name!=="unit"&&i.name!=="qty") i.value=""; }); recalcForm(); break; }
+    case "rmItem": {
+      const f = el.closest("form") || document;
+      const rows = $$(".item", f);
+      if(rows.length>1) el.closest(".item").remove();
+      else $$("input", rows[0]).forEach(i=>{ if(i.name!=="unit"&&i.name!=="qty") i.value=""; });
+      recalcForm();
+      break;
+    }
     case "rmFile": e.stopPropagation(); S.formFiles.splice(+el.dataset.i,1); paintFiles(); break;
     case "viewFile": viewFile(el.dataset.fid, el.dataset.ftype, el.dataset.fname); break;
     case "closeViewer": $("#toastHost").innerHTML=""; break;
@@ -4283,14 +4880,14 @@ document.addEventListener("input", e => {
     }
     return;
   }
-  if(t.closest("#docForm")){
+  if(t.closest("#docForm, #workNoteForm")){
     if(t.name==="material") onMaterialOrThickChange(t.closest(".item"), "material");
     if(t.name==="cname"){
       const c = clientNames().get(t.value) || S.clients.find(x => (x.name||"").trim().toLowerCase() === t.value.trim().toLowerCase());
       if(c){
         const f=t.form;
-        ["phone","address","gstin"].forEach(k=>{ if(!f["c"+k].value) f["c"+k].value=c[k]||""; });
-        if(c.state && !f.cstate.value) f.cstate.value=c.state;
+        ["phone","address","gstin"].forEach(k=>{ if(f["c"+k] && !f["c"+k].value) f["c"+k].value=c[k]||""; });
+        if(c.state && f.cstate && !f.cstate.value) f.cstate.value=c.state;
         const targetSite = f.csite?.value || c.site || "";
         updateDocSiteOptions(c.name, targetSite);
         if(f.csite && !f.csite.value && c.site) f.csite.value=c.site;
@@ -4299,7 +4896,7 @@ document.addEventListener("input", e => {
       }
     }
     if(t.id==="csiteInput" || t.name==="csite"){
-      const f = t.form || $("#docForm");
+      const f = t.form || $("#docForm") || $("#workNoteForm");
       const val = t.value.trim().toLowerCase();
       if(f && f.csiteSelect){
         const matching = Array.from(f.csiteSelect.options).find(o => o.value && o.value.toLowerCase() === val);
@@ -4311,7 +4908,7 @@ document.addEventListener("input", e => {
           f.csiteSelect.value = "";
         }
       }
-      $$("#csiteChips button").forEach(b => b.classList.toggle("active", (b.dataset.site||"").toLowerCase() === val));
+      $$("#csiteChips button", f).forEach(b => b.classList.toggle("active", (b.dataset.site||"").toLowerCase() === val));
     }
     if(t.name==="qty"){
       const r = t.closest(".item");
@@ -4324,7 +4921,13 @@ document.addEventListener("input", e => {
         });
       }
     }
-    if(t.name==="date" && !t.form.dataset.id){ const isQ=t.form.dataset.kind==="quote"; const nn=nextNo(isQ?S.quotes:S.invoices, isQ?(S.settings.quotePrefix||"QT"):(S.settings.invPrefix||"INV"), t.value); if(/\/\d{2}-\d{2}\/\d+$/.test(t.form.no.value)) t.form.no.value=nn.no; }
+    if(t.name==="date" && !t.form.dataset.id){
+      if(t.form.dataset.form === "doc"){
+        const isQ=t.form.dataset.kind==="quote"; const nn=nextNo(isQ?S.quotes:S.invoices, isQ?(S.settings.quotePrefix||"QT"):(S.settings.invPrefix||"INV"), t.value); if(/\/\d{2}-\d{2}\/\d+$/.test(t.form.no.value)) t.form.no.value=nn.no;
+      } else if(t.form.dataset.form === "workNote" && /^NOTE-\d+$/.test(t.form.no.value)){
+        t.form.no.value = nextNoteNo(t.value);
+      }
+    }
     recalcForm();
   }
 });
@@ -4341,27 +4944,27 @@ document.addEventListener("change", async e => {
     return;
   }
   if(t.id==="csiteSelect" || t.name==="csiteSelect"){
-    const f = t.form || $("#docForm");
+    const f = t.form || $("#docForm") || $("#workNoteForm");
     if(f){
       if(t.value === "__custom"){
         if(f.csite){
           f.csite.focus();
           f.csite.select();
         }
-        $$("#csiteChips button").forEach(b => b.classList.remove("active"));
+        $$("#csiteChips button", f).forEach(b => b.classList.remove("active"));
       } else {
         if(f.csite) f.csite.value = t.value;
-        $$("#csiteChips button").forEach(b => b.classList.toggle("active", (b.dataset.site||"").toLowerCase() === (t.value||"").toLowerCase()));
+        $$("#csiteChips button", f).forEach(b => b.classList.toggle("active", (b.dataset.site||"").toLowerCase() === (t.value||"").toLowerCase()));
       }
     }
     return;
   }
-  if(t.name==="cname" && t.closest("#docForm")){
+  if(t.name==="cname" && t.closest("#docForm, #workNoteForm")){
     const c = clientNames().get(t.value) || S.clients.find(x => (x.name||"").trim().toLowerCase() === t.value.trim().toLowerCase());
     if(c){
       const f=t.form;
-      ["phone","address","gstin"].forEach(k=>{ if(!f["c"+k].value) f["c"+k].value=c[k]||""; });
-      if(c.state && !f.cstate.value) f.cstate.value=c.state;
+      ["phone","address","gstin"].forEach(k=>{ if(f["c"+k] && !f["c"+k].value) f["c"+k].value=c[k]||""; });
+      if(c.state && f.cstate && !f.cstate.value) f.cstate.value=c.state;
       const targetSite = f.csite?.value || c.site || "";
       updateDocSiteOptions(c.name, targetSite);
       if(f.csite && !f.csite.value && c.site) f.csite.value=c.site;
@@ -4389,7 +4992,7 @@ document.addEventListener("change", async e => {
     }
     return;
   }
-  if(t.closest("#docForm")){
+  if(t.closest("#docForm, #workNoteForm")){
     if(t.name==="material") onMaterialOrThickChange(t.closest(".item"), "material");
     if(t.name==="thick") onMaterialOrThickChange(t.closest(".item"), "thick");
     recalcForm();
@@ -4409,7 +5012,7 @@ document.addEventListener("change", async e => {
 });
 document.addEventListener("submit", async e => {
   const f=e.target; if(!f.dataset.form) return; e.preventDefault();
-  const fn = {doc:saveDoc, pay:savePay, txn:saveTxn, mat:saveMat, move:saveMove, ven:saveVen, bill:saveBill, cli:saveCli, set:saveSettings, user:saveUser, pass:savePass, reset:saveReset, clientPay:saveClientPay}[f.dataset.form];
+  const fn = {doc:saveDoc, pay:savePay, txn:saveTxn, mat:saveMat, move:saveMove, ven:saveVen, bill:saveBill, cli:saveCli, set:saveSettings, user:saveUser, pass:savePass, reset:saveReset, clientPay:saveClientPay, workNote:saveWorkNote}[f.dataset.form];
   if(!fn) return;
   await fn(f);
 });
