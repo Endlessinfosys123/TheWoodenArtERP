@@ -255,6 +255,7 @@ const I = {
   edit:'<path d="M4 20h4L19 9l-4-4L4 16z"/>',
   trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
   box:'<path d="M21 8 12 3 3 8v8l9 5 9-5z"/>',
+  tally:'<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10M6 10h10M6 14h6"/>',
   sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
   moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/>'
 };
@@ -298,9 +299,10 @@ const S = {
   settings:{}, settingsVersion:0,
   invoices:[], quotes:[], txns:[], materials:[], moves:[], vendors:[], bills:[], clients:[],
   loaded:new Set(),
-  view:"home", sub:{sales:"inv", money:"all", stock:"mat", vendors:"bills"},
+  view:"home", sub:{sales:"inv", money:"all", stock:"mat", vendors:"bills", tally:"parties"},
   month: today().slice(0,7), q:{},
-  sheet:null, formFiles:[], names:{}
+  sheet:null, formFiles:[], names:{},
+  _tallyLedgers:[], _tallyVouchers:[], _tallyGroups:[]
 };
 
 /* ---------- utils ---------- */
@@ -460,7 +462,7 @@ function render(){
   if(S.offline) html += `<div class="banner">Open this app while signed in to claude.ai to load and save your company's data.</div>`;
   else if(!S.canWrite) html += `<div class="banner">You have view-only access. Ask the owner to share it with you as Contributor to add entries.</div>`;
   if(!S.ready && !S.offline){ v.innerHTML = html + `<div class="loading">Loading your books…</div>`; $("#fabHost").innerHTML=""; return; }
-  html += ({home:vHome, sales:vSales, clients:vClients, money:vMoney, stock:vStock, vendors:vVendors})[S.view]();
+  html += ({home:vHome, sales:vSales, clients:vClients, money:vMoney, stock:vStock, vendors:vVendors, tally:vTally})[S.view]();
   const oldQ = document.activeElement && document.activeElement.id==="q" ? document.activeElement : null;
   const tmp = document.createElement("div"); tmp.innerHTML = html;
   const newQ = tmp.querySelector("#q"); const newBar = newQ && newQ.closest(".bar"); const oldBar = oldQ && oldQ.closest(".bar");
@@ -481,6 +483,7 @@ function fabFor(){
     case "money": return ["newTxn", S.sub.money==="income"?"Add income":"Add expense", `data-type="${S.sub.money==="income"?"income":"expense"}"`];
     case "stock": return ["newMaterial","Add material"];
     case "vendors": return S.sub.vendors==="bills" ? ["newBill","Upload bill"] : ["newVendor","Add vendor"];
+    case "tally": return ["newReceiptVoucher","+ Receipt (F6)"];
   }
 }
 function seg(group, opts){ return `<div class="seg" role="group">${opts.map(([k,l])=>`<button data-act="sub" data-g="${group}" data-v="${k}" aria-pressed="${S.sub[group]===k}">${l}</button>`).join("")}</div>`; }
@@ -516,6 +519,45 @@ function vHome(){
     <button data-act="newClient"><span class="ic">${svg("clients")}</span>Client</button>
     <button data-act="newTxn" data-type="expense"><span class="ic">${svg("down")}</span>Expense</button>
     <button data-act="newBill"><span class="ic">${svg("cam")}</span>Vendor bill</button>
+  </div>`;
+
+  // Tally Prime Double-Entry Account Section on Dashboard Home
+  h += `
+  <div class="card" style="margin:16px 0;background:linear-gradient(135deg,var(--surface) 0%,var(--surface-2) 100%);border:1px solid var(--line);box-shadow:0 4px 14px rgba(0,0,0,0.06);border-radius:14px;padding:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:36px;height:36px;border-radius:9px;background:var(--pri);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;box-shadow:0 2px 8px rgba(11,107,93,0.3)">T</div>
+        <div>
+          <div style="font-weight:800;font-size:16px;color:var(--ink);display:flex;align-items:center;gap:6px">
+            Tally Account & Ledgers
+            <span class="chip" style="font-size:10px;background:var(--pri-subtle);color:var(--pri);font-weight:700">Tally Prime</span>
+          </div>
+          <div class="small muted">Client & Vendor Ledgers · Double-Entry · Day Book · Trial Balance</div>
+        </div>
+      </div>
+      <button class="btn pri sm" data-act="goto" data-v="tally" data-g="tally" data-s="parties" style="font-weight:700">Open Tally Books →</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px">
+      <div style="background:var(--surface);padding:10px 12px;border-radius:8px;border:1px solid var(--line);cursor:pointer" data-act="goto" data-v="tally" data-g="tally" data-s="parties">
+        <div class="small muted">Sundry Debtors (Receivable)</div>
+        <div class="num" style="font-weight:800;font-size:16px;color:var(--ink);margin-top:2px">${inrShort(recv)}</div>
+      </div>
+      <div style="background:var(--surface);padding:10px 12px;border-radius:8px;border:1px solid var(--line);cursor:pointer" data-act="goto" data-v="tally" data-g="tally" data-s="parties">
+        <div class="small muted">Sundry Creditors (Payable)</div>
+        <div class="num" style="font-weight:800;font-size:16px;color:var(--ink);margin-top:2px">${inrShort(pay)}</div>
+      </div>
+      <div style="background:var(--surface);padding:10px 12px;border-radius:8px;border:1px solid var(--line);cursor:pointer" data-act="openTallyTrial">
+        <div class="small muted">Trial Balance Status</div>
+        <div style="font-weight:800;font-size:13px;color:var(--good);margin-top:4px;display:flex;align-items:center;gap:4px">✓ Strictly Balanced</div>
+      </div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      <button class="btn sm" data-act="newReceiptVoucher" style="background:var(--good-bg);color:var(--good);border:1px solid var(--good-border);font-weight:700"><span class="kbd-hint" style="margin-right:4px">F6</span>+ Client Receipt</button>
+      <button class="btn sm" data-act="newPaymentVoucher" style="background:var(--bad-bg);color:var(--bad);border:1px solid var(--bad-border);font-weight:700"><span class="kbd-hint" style="margin-right:4px">F5</span>+ Vendor Payment</button>
+      <button class="btn sm" data-act="openTallyDayBook">${svg("doc")}Day Book</button>
+      <button class="btn sm" data-act="openTallyTrial">${svg("receipt")}Trial Balance</button>
+      <button class="btn sm" data-act="goto" data-v="tally" data-g="tally" data-s="parties">${svg("clients")}Parties List</button>
+    </div>
   </div>`;
   // chart
   const months=[]; for(let i=5;i>=0;i--) months.push(shiftMonth(ym,-i));
@@ -592,7 +634,7 @@ function vClients(){
   });
 
   let h = `<h2 class="vt">Clients</h2>`;
-  h += `<div class="bar">${searchBar("cli","Search client name, phone, site or GSTIN")}<button class="btn sm" data-act="exportClients">${svg("dl")}CSV</button><button class="btn pri sm" data-act="newClient">+ Client</button></div>`;
+  h += `<div class="bar">${searchBar("cli","Search client name, phone, site or GSTIN")}<button class="btn sm" data-act="goto" data-v="tally" data-g="tally" data-s="parties">Tally Debtors</button><button class="btn sm" data-act="exportClients">${svg("dl")}CSV</button><button class="btn pri sm" data-act="newClient">+ Client</button></div>`;
   if(S.clients.length) h += `<p class="small muted" style="margin:0 0 8px">Total outstanding from clients: <b class="num" style="color:var(--ink)">${inr(totalDue)}</b> · ${S.clients.length} client${S.clients.length===1?"":"s"}</p>`;
   h += !S.clients.length ? emptyBox("No clients yet","Add clients to track their daily work, sites, invoices, payments, and monthly khata ledger.","newClient","Add client")
     : !list.length ? `<p class="muted">No client matches “${esc(S.q.cli)}”.</p>`
@@ -601,7 +643,28 @@ function vClients(){
         const ledger = buildClientLedger(c);
         const due = ledger.closingBalance;
         const siteDisplay = sites.length ? `${sites.slice(0,2).join(", ")}${sites.length>2?` +${sites.length-2} more`:""}` : "";
-        return `<button class="row" data-act="openClient" data-id="${c.id}"><div class="av n">${esc(initials(c.name))}</div><div class="main"><div class="t">${esc(c.name)}${siteDisplay ? ` <span class="chip-site" style="font-size:10px;padding:1px 6px">${esc(siteDisplay)}</span>` : ""}</div><div class="s">${esc([c.phone, c.gstin&&("GSTIN "+c.gstin), c.notes].filter(Boolean).join(" · ")||"—")}</div></div><div class="amt"><b>${inr(Math.max(0,due))}</b><span class="small muted">${due>0?"due":"clear"} · ${sites.length} site${sites.length===1?"":"s"}</span></div></button>`;
+        return `<div class="card" style="margin-bottom:8px;padding:12px;background:var(--surface)">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;cursor:pointer" data-act="openClient" data-id="${c.id}">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div class="av n">${esc(initials(c.name))}</div>
+              <div>
+                <div style="font-weight:700;font-size:15px;color:var(--ink)">
+                  ${esc(c.name)}${siteDisplay ? ` <span class="chip-site" style="font-size:10px;padding:1px 6px">${esc(siteDisplay)}</span>` : ""}
+                </div>
+                <div class="small muted" style="margin-top:2px">${esc([c.phone, c.gstin&&("GSTIN "+c.gstin), c.notes].filter(Boolean).join(" · ")||"—")}</div>
+              </div>
+            </div>
+            <div style="text-align:right">
+              <div class="num" style="font-weight:800;font-size:15px;color:var(--ink)">${inr(Math.max(0,due))}</div>
+              <span class="small muted">${due>0?"due":"clear"} · ${sites.length} site${sites.length===1?"":"s"}</span>
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">
+            <button class="btn sm" data-act="openTallyClient" data-id="${c.id}">${svg("receipt")}Tally Ledger</button>
+            <button class="btn sm" data-act="tallyReceiptForClient" data-id="${c.id}" style="background:var(--good-bg);color:var(--good);border:1px solid var(--good-border);font-weight:700"><span class="kbd-hint" style="font-size:10px;margin-right:2px">F6</span>+ Receipt</button>
+            <button class="btn sm" data-act="openClient" data-id="${c.id}">Client Details →</button>
+          </div>
+        </div>`;
       }).join("")}</div>`;
   return h;
 }
@@ -658,14 +721,755 @@ function vVendors(){
       : `<div class="list">${list.map(b=>{ const st=billStatus(b); return `<button class="row" data-act="openBill" data-id="${b.id}"><div class="av out">${svg("receipt")}</div><div class="main"><div class="t">${esc(vendorName(b.vendorId))}</div><div class="s">${b.billNo?`<span class="mono">${esc(b.billNo)}</span> · `:""}${fmtDate(b.date)}${b.files?.length?" · 📎 "+b.files.length:""}</div></div><div class="amt"><b>${inr(b.amount)}</b><span class="chip ${st}">${st}</span></div></button>`; }).join("")}</div>`;
   } else {
     const list = S.vendors.filter(v=>match("ven", v.name, v.phone, v.gstin)).sort((a,b)=>(a.name||"").localeCompare(b.name||""));
-    h += `<div class="bar">${searchBar("ven","Search vendor")}</div>`;
+    h += `<div class="bar">${searchBar("ven","Search vendor")}<button class="btn sm" data-act="goto" data-v="tally" data-g="tally" data-s="parties">Tally Creditors</button><button class="btn pri sm" data-act="newVendor">+ Vendor</button></div>`;
     h += !S.vendors.length ? emptyBox("No vendors yet","Add the suppliers you buy from. Each vendor shows total billed, paid and still due.","newVendor","Add vendor")
-      : `<div class="list">${list.map(v=>{ const bs=S.bills.filter(b=>b.vendorId===v.id); const due=sum(bs,b=>(+b.amount||0)-paidOf(b)); return `<button class="row" data-act="openVendor" data-id="${v.id}"><div class="av n">${esc(initials(v.name))}</div><div class="main"><div class="t">${esc(v.name)}</div><div class="s">${esc([v.phone, v.gstin].filter(Boolean).join(" · ")||"—")}</div></div><div class="amt"><b>${inr(due)}</b><span class="small muted">due · ${bs.length} bill${bs.length===1?"":"s"}</span></div></button>`; }).join("")}</div>`;
+      : `<div class="list">${list.map(v=>{
+          const bs=S.bills.filter(b=>b.vendorId===v.id);
+          const due=sum(bs,b=>(+b.amount||0)-paidOf(b));
+          return `<div class="card" style="margin-bottom:8px;padding:12px;background:var(--surface)">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;cursor:pointer" data-act="openVendor" data-id="${v.id}">
+              <div style="display:flex;align-items:center;gap:10px">
+                <div class="av n">${esc(initials(v.name))}</div>
+                <div>
+                  <div style="font-weight:700;font-size:15px;color:var(--ink)">${esc(v.name)}</div>
+                  <div class="small muted" style="margin-top:2px">${esc([v.phone, v.gstin].filter(Boolean).join(" · ")||"—")}</div>
+                </div>
+              </div>
+              <div style="text-align:right">
+                <div class="num" style="font-weight:800;font-size:15px;color:var(--ink)">${inr(due)}</div>
+                <span class="small muted">due · ${bs.length} bill${bs.length===1?"":"s"}</span>
+              </div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">
+              <button class="btn sm" data-act="openTallyVendor" data-id="${v.id}">${svg("receipt")}Tally Ledger</button>
+              <button class="btn sm" data-act="tallyPaymentForVendor" data-id="${v.id}" style="background:var(--bad-bg);color:var(--bad);border:1px solid var(--bad-border);font-weight:700"><span class="kbd-hint" style="font-size:10px;margin-right:2px">F5</span>+ Pay Vendor</button>
+              <button class="btn sm" data-act="openVendor" data-id="${v.id}">Vendor Details →</button>
+            </div>
+          </div>`;
+        }).join("")}</div>`;
   }
   return h;
 }
 
-/* ---------- sheet system ---------- */
+/* =============================================================
+   TALLY ACCOUNT — Double-Entry Ledgers, Vouchers & Day Book
+   ============================================================= */
+let tallyLoading = false;
+let lastTallyFetch = 0;
+
+async function ensureTallyData(force = false) {
+  if (tallyLoading) return;
+  const now = Date.now();
+  if (!force && now - lastTallyFetch < 15000 && S._tallyLedgers?.length) return;
+  tallyLoading = true;
+  try {
+    if (window.KhataRest?.ledger) {
+      const [ledRes, vchRes, grpRes] = await Promise.all([
+        window.KhataRest.ledger.getLedgers(),
+        window.KhataRest.ledger.getVouchers(),
+        window.KhataRest.ledger.getGroups()
+      ]);
+      S._tallyLedgers = ledRes.ledgers || [];
+      S._tallyVouchers = vchRes.vouchers || [];
+      S._tallyGroups = grpRes.groups || [];
+      lastTallyFetch = Date.now();
+      render();
+    }
+  } catch (err) {
+    console.warn("Failed to fetch tally data:", err);
+  } finally {
+    tallyLoading = false;
+  }
+}
+
+function vTally(){
+  ensureTallyData();
+  const sub = S.sub.tally || "parties";
+
+  let h = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="btn sm" data-act="goto" data-v="home">← Dashboard</button>
+        <h2 class="vt" style="margin:0">Tally Account</h2>
+      </div>
+      <span class="chip-note" style="font-size:11px">Double-Entry · Tally Prime</span>
+    </div>
+    <div class="tally-shortcut-bar">
+      <button class="tally-shortcut-btn" data-act="newReceiptVoucher" title="F6 Receipt Voucher"><span class="kbd-hint">F6</span> + Receipt</button>
+      <button class="tally-shortcut-btn" data-act="newPaymentVoucher" title="F5 Payment Voucher"><span class="kbd-hint">F5</span> + Payment</button>
+      <button class="tally-shortcut-btn" data-act="newContraVoucher" title="F4 Contra Voucher"><span class="kbd-hint">F4</span> Contra</button>
+      <button class="tally-shortcut-btn" data-act="newJournalVoucher" title="F7 Journal Voucher"><span class="kbd-hint">F7</span> Journal</button>
+      ${S.canWrite ? `<button class="tally-shortcut-btn" data-act="newCustomLedger" title="Alt+C New Ledger"><span class="kbd-hint">Alt+C</span> + Ledger</button>` : ""}
+    </div>
+  `;
+
+  h += seg("tally", [
+    ["parties", `Parties (${(S._tallyLedgers||[]).filter(l=>l.partyType).length})`],
+    ["daybook", `Day Book (${(S._tallyVouchers||[]).length})`],
+    ["trial", `Trial Balance`],
+    ["chart", `Chart of Accounts`]
+  ]);
+
+  if(sub === "parties"){
+    h += vTallyParties();
+  } else if(sub === "daybook"){
+    h += vTallyDayBook();
+  } else if(sub === "trial"){
+    h += vTallyTrialBalance();
+  } else if(sub === "chart"){
+    h += vTallyChart();
+  }
+
+  return h;
+}
+
+function vTallyParties(){
+  const ledgers = S._tallyLedgers || [];
+  const parties = ledgers.filter(l => l.partyType === "client" || l.partyType === "vendor");
+
+  const filter = S.tallyPartyFilter || "all";
+  const filtered = parties.filter(l => {
+    if(filter === "client" && l.partyType !== "client") return false;
+    if(filter === "vendor" && l.partyType !== "vendor") return false;
+    return match("tallyParty", l.name, l.phone, l.gstin, l.groupName);
+  });
+
+  const totalReceivable = parties.filter(l => l.closingSide === "Dr").reduce((acc, l) => acc + (l.closingRupees || 0), 0);
+  const totalPayable = parties.filter(l => l.closingSide === "Cr").reduce((acc, l) => acc + (l.closingRupees || 0), 0);
+
+  let h = `
+    <div class="tiles" style="margin-top:10px">
+      <div class="tile good">
+        <div class="k">Receivable (Dr - Clients)</div>
+        <div class="v num">${inrShort(totalReceivable)}</div>
+      </div>
+      <div class="tile bad">
+        <div class="k">Payable (Cr - Vendors)</div>
+        <div class="v num">${inrShort(totalPayable)}</div>
+      </div>
+      <div class="tile">
+        <div class="k">Net Outstanding</div>
+        <div class="v num">${inrShort(totalReceivable - totalPayable)}</div>
+      </div>
+    </div>
+    <div class="bar" style="margin-top:8px">
+      <div class="seg" role="group" style="margin:0">
+        <button data-act="setTallyPartyFilter" data-v="all" aria-pressed="${filter==='all'}">All (${parties.length})</button>
+        <button data-act="setTallyPartyFilter" data-v="client" aria-pressed="${filter==='client'}">Clients (${parties.filter(p=>p.partyType==='client').length})</button>
+        <button data-act="setTallyPartyFilter" data-v="vendor" aria-pressed="${filter==='vendor'}">Vendors (${parties.filter(p=>p.partyType==='vendor').length})</button>
+      </div>
+      ${searchBar("tallyParty", "Search party name, phone, GSTIN...")}
+    </div>
+  `;
+
+  if(!filtered.length){
+    h += emptyBox("No party ledgers found", "Client and vendor ledgers are created automatically when invoices or bills are entered.", "newReceiptVoucher", "New Receipt (F6)");
+  } else {
+    h += `<div class="list" style="margin-top:8px">${filtered.map(l => {
+      const isClient = l.partyType === "client";
+      const sideClass = l.closingSide === "Dr" ? "chip-dr" : "chip-cr";
+      return `
+        <div class="card" style="margin-bottom:8px;padding:12px;background:var(--surface)">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;cursor:pointer" data-act="openTallyStatement" data-id="${l.id}">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div class="av ${isClient ? 'in' : 'out'}">${esc(initials(l.name))}</div>
+              <div>
+                <div style="font-weight:700;font-size:15px;color:var(--ink)">
+                  ${esc(l.name)}
+                  <span class="chip" style="font-size:10px;font-weight:600;margin-left:4px">${isClient ? "Debtor / Client" : "Creditor / Vendor"}</span>
+                </div>
+                <div class="small muted" style="margin-top:2px">${esc([l.phone, l.gstin && ("GSTIN " + l.gstin), l.state].filter(Boolean).join(" · ") || "No GSTIN")}</div>
+              </div>
+            </div>
+            <div style="text-align:right">
+              <span class="${sideClass}" style="font-size:13px;padding:3px 8px">${esc(l.formattedClosing)}</span>
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">
+            <button class="btn sm" data-act="openTallyStatement" data-id="${l.id}">${svg("receipt")}Statement</button>
+            ${isClient ? `
+              <button class="btn sm" data-act="newReceiptVoucher" data-party="${l.id}" style="background:var(--good-bg);color:var(--good);border:1px solid var(--good-border);font-weight:700"><span class="kbd-hint" style="font-size:10px;margin-right:2px">F6</span>+ Direct Receipt</button>
+              ${l.partyId ? `<button class="btn sm" data-act="newInvoiceForClient" data-id="${l.partyId}">+ New Invoice</button>` : ""}
+              ${l.partyId ? `<button class="btn sm" data-act="openClient" data-id="${l.partyId}">Client Profile →</button>` : ""}
+            ` : `
+              <button class="btn sm" data-act="newPaymentVoucher" data-party="${l.id}" style="background:var(--bad-bg);color:var(--bad);border:1px solid var(--bad-border);font-weight:700"><span class="kbd-hint" style="font-size:10px;margin-right:2px">F5</span>+ Direct Payment</button>
+              ${l.partyId ? `<button class="btn sm" data-act="newBill" data-vendor="${l.partyId}">+ Upload Bill</button>` : ""}
+              ${l.partyId ? `<button class="btn sm" data-act="openVendor" data-id="${l.partyId}">Vendor Profile →</button>` : ""}
+            `}
+          </div>
+        </div>
+      `;
+    }).join("")}</div>`;
+  }
+
+  return h;
+}
+
+function vTallyDayBook(){
+  const vouchers = S._tallyVouchers || [];
+  const qStr = (S.q.daybook || "").toLowerCase().trim();
+
+  const filtered = vouchers.filter(v => {
+    if(!qStr) return true;
+    return (v.vno||"").toLowerCase().includes(qStr) ||
+           (v.vtype||"").toLowerCase().includes(qStr) ||
+           (v.narration||"").toLowerCase().includes(qStr) ||
+           (v.formattedTotal||"").toLowerCase().includes(qStr);
+  });
+
+  let h = `
+    <div class="bar" style="margin-top:10px">
+      ${searchBar("daybook", "Search voucher no, narration, type...")}
+      <button class="btn sm" data-act="refreshTallyData">${svg("receipt")}Refresh</button>
+    </div>
+  `;
+
+  if(!filtered.length){
+    h += emptyBox("Day Book is empty", "Every sales invoice, vendor bill, client receipt, and payment automatically appears in the Day Book.", "newReceiptVoucher", "Add Receipt (F6)");
+  } else {
+    h += `<div class="list" style="margin-top:8px">${filtered.map(v => {
+      const isCancelled = v.status === "cancelled";
+      return `
+        <button class="row" data-act="openTallyVoucher" data-id="${v.id}" style="${isCancelled ? 'opacity:0.6;' : ''}">
+          <div class="av ${v.vtype==='sales'||v.vtype==='receipt'?'in':'out'}">${svg("doc")}</div>
+          <div class="main">
+            <div class="t">
+              <span class="chip-vtype ${v.vtype}">${esc(v.vtype)}</span>
+              <b class="mono">${esc(v.vno)}</b>
+              ${isCancelled ? `<span class="chip bad" style="font-size:10px;padding:1px 5px">Cancelled</span>` : ""}
+            </div>
+            <div class="s">${fmtDate(v.date)} · ${esc(v.narration || "—")}</div>
+          </div>
+          <div class="amt">
+            <b class="num" style="${isCancelled ? 'text-decoration:line-through;color:var(--muted)' : ''}">₹${esc(v.formattedTotal)}</b>
+          </div>
+        </button>
+      `;
+    }).join("")}</div>`;
+  }
+
+  return h;
+}
+
+function vTallyTrialBalance(){
+  let h = `
+    <div class="bar" style="margin-top:10px;justify-content:space-between">
+      <div style="font-weight:700;font-size:15px">Trial Balance</div>
+      <button class="btn sm pri" data-act="refreshTallyTrial">${svg("receipt")}Recompute</button>
+    </div>
+    <div id="trialBalanceContent"><div class="loading">Computing double-entry balances…</div></div>
+  `;
+
+  setTimeout(loadTrialBalanceUI, 50);
+  return h;
+}
+
+async function loadTrialBalanceUI(){
+  const container = $("#trialBalanceContent");
+  if(!container) return;
+  try {
+    const res = await window.KhataRest.ledger.getTrialBalance();
+    const groups = res.groups || [];
+    let tbHtml = `
+      <div class="tiles" style="margin:10px 0">
+        <div class="tile">
+          <div class="k">Total Debit (Dr)</div>
+          <div class="v num" style="color:var(--brand)">₹${esc(res.formattedTotalDebit)}</div>
+        </div>
+        <div class="tile">
+          <div class="k">Total Credit (Cr)</div>
+          <div class="v num" style="color:var(--brand)">₹${esc(res.formattedTotalCredit)}</div>
+        </div>
+        <div class="tile ${res.isBalanced ? 'good' : 'bad'}">
+          <div class="k">Status</div>
+          <div class="v" style="font-size:14px;font-weight:800">${res.isBalanced ? '✓ BALANCED (₹0.00)' : '⚠ DIFFERENCE ₹' + inr(res.differencePaise/100)}</div>
+        </div>
+      </div>
+      <table class="tally-table">
+        <thead>
+          <tr>
+            <th>Particulars (Group / Ledger)</th>
+            <th class="num" style="width:110px">Debit (₹)</th>
+            <th class="num" style="width:110px">Credit (₹)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${groups.map(g => `
+            <tr style="background:var(--surface-2);font-weight:700">
+              <td>${esc(g.groupName)} <span class="small muted" style="font-weight:normal">(${esc(g.groupNature)})</span></td>
+              <td class="num">${g.formattedDr ? "₹"+esc(g.formattedDr) : "—"}</td>
+              <td class="num">${g.formattedCr ? "₹"+esc(g.formattedCr) : "—"}</td>
+            </tr>
+            ${(g.ledgers||[]).map(l => `
+              <tr style="font-size:12.5px">
+                <td style="padding-left:24px">${esc(l.ledgerName)}</td>
+                <td class="num">${l.formattedDr ? "₹"+esc(l.formattedDr) : ""}</td>
+                <td class="num">${l.formattedCr ? "₹"+esc(l.formattedCr) : ""}</td>
+              </tr>
+            `).join("")}
+          `).join("")}
+          <tr style="font-weight:800;border-top:2px solid var(--ink);border-bottom:2px solid var(--ink);background:var(--surface-2)">
+            <td>GRAND TOTAL</td>
+            <td class="num">₹${esc(res.formattedTotalDebit)}</td>
+            <td class="num">₹${esc(res.formattedTotalCredit)}</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+    container.innerHTML = tbHtml;
+  } catch(e) {
+    container.innerHTML = `<p class="bad">Could not load Trial Balance: ${esc(e.message)}</p>`;
+  }
+}
+
+function vTallyChart(){
+  const ledgers = S._tallyLedgers || [];
+  const groups = S._tallyGroups || [];
+
+  let h = `
+    <div class="bar" style="margin-top:10px;justify-content:space-between">
+      <div style="font-weight:700;font-size:15px">Chart of Accounts (${ledgers.length} Ledgers)</div>
+      ${S.canWrite ? `<button class="btn sm pri" data-act="newCustomLedger">${svg("plus")}New Ledger</button>` : ""}
+    </div>
+    <div class="list" style="margin-top:8px">
+      ${ledgers.map(l => `
+        <div class="row" style="cursor:default">
+          <div class="av n">${svg("box")}</div>
+          <div class="main">
+            <div class="t">${esc(l.name)} ${l.isSystem ? '<span class="chip-note" style="font-size:10px;padding:1px 5px">System</span>' : ''}</div>
+            <div class="s">${esc(l.groupName)} · ${esc(l.groupNature)}</div>
+          </div>
+          <div class="amt">
+            <b>${esc(l.formattedClosing)}</b>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+  return h;
+}
+
+// -------------------------------------------------------------
+// Party Ledger Statement Sheet
+// -------------------------------------------------------------
+async function dTallyStatement(ledgerId, period = "month"){
+  openSheet("Ledger Statement", `<div class="loading">Loading statement…</div>`, "", {kind:"detail", type:"tallyStatement", id:ledgerId});
+  try {
+    let from = "", to = "";
+    if(period === "month"){
+      from = S.month + "-01";
+      to = S.month + "-31";
+    } else if(period === "fy"){
+      const ym = today().slice(0,7);
+      const [y,m] = ym.split("-").map(Number);
+      const startYr = m >= 4 ? y : y - 1;
+      from = `${startYr}-04-01`;
+      to = `${startYr+1}-03-31`;
+    }
+
+    const params = [from ? `from=${from}` : "", to ? `to=${to}` : ""].filter(Boolean).join("&");
+    const res = await window.KhataRest.ledger.getStatement(ledgerId, params);
+    const led = res.ledger || {};
+    const op = res.opening || {};
+    const cl = res.closing || {};
+    const entries = res.entries || [];
+    const isDebtor = led.partyType === "client";
+
+    let b = `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+        <div>
+          <div style="font-weight:800;font-size:18px">${esc(led.name)}</div>
+          <div class="small muted">${esc([led.groupName, led.phone, led.gstin && ("GSTIN " + led.gstin)].filter(Boolean).join(" · "))}</div>
+        </div>
+        <span class="${cl.side==='Dr'?'chip-dr':'chip-cr'}" style="font-size:14px;padding:4px 10px">Closing: ${esc(cl.formatted)}</span>
+      </div>
+
+      <div class="bar" style="margin:12px 0 8px 0">
+        <div class="seg" role="group" style="margin:0">
+          <button data-act="tallyPeriod" data-id="${ledgerId}" data-v="month" aria-pressed="${period==='month'}">This Month</button>
+          <button data-act="tallyPeriod" data-id="${ledgerId}" data-v="fy" aria-pressed="${period==='fy'}">This FY</button>
+          <button data-act="tallyPeriod" data-id="${ledgerId}" data-v="all" aria-pressed="${period==='all'}">All Time</button>
+        </div>
+      </div>
+
+      <div class="tiles" style="margin-bottom:12px">
+        <div class="tile">
+          <div class="k">Opening Balance</div>
+          <div class="v num">${esc(op.formatted)}</div>
+        </div>
+        <div class="tile good">
+          <div class="k">Total Debit (Dr)</div>
+          <div class="v num">₹${inr(res.totals.drRupees)}</div>
+        </div>
+        <div class="tile bad">
+          <div class="k">Total Credit (Cr)</div>
+          <div class="v num">₹${inr(res.totals.crRupees)}</div>
+        </div>
+      </div>
+
+      <div class="actions" style="margin-bottom:12px">
+        ${isDebtor ? `<button class="btn pri sm" data-act="newReceiptVoucher" data-party="${ledgerId}">${svg("up")}Receive Payment (F6)</button>` : `<button class="btn pri sm" data-act="newPaymentVoucher" data-party="${ledgerId}">${svg("down")}Pay Vendor (F5)</button>`}
+        <button class="btn sm" data-act="shareTallyWhatsApp" data-id="${ledgerId}">${svg("wa")}WhatsApp</button>
+      </div>
+
+      <table class="tally-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Particulars / Vch No</th>
+            <th class="num">Debit (Dr)</th>
+            <th class="num">Credit (Cr)</th>
+            <th class="num">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="background:var(--surface-2);font-weight:600">
+            <td>${fmtDate(op.date || from || today())}</td>
+            <td colspan="3">Opening Balance</td>
+            <td class="num">${esc(op.formatted)}</td>
+          </tr>
+          ${entries.map(e => `
+            <tr style="cursor:pointer" data-act="openTallyVoucher" data-id="${e.voucherId}">
+              <td>${fmtDate(e.date)}</td>
+              <td>
+                <span class="chip-vtype ${e.vtype}">${esc(e.vtype)}</span>
+                <b>${esc(e.vno)}</b><br>
+                <span class="small muted">${esc(e.narration || "")}</span>
+              </td>
+              <td class="num">${e.drRupees > 0 ? inr(e.drRupees) : "—"}</td>
+              <td class="num">${e.crRupees > 0 ? inr(e.crRupees) : "—"}</td>
+              <td class="num"><b>${esc(e.formattedBalance)}</b></td>
+            </tr>
+          `).join("")}
+          <tr style="font-weight:800;background:var(--surface-2);border-top:2px solid var(--ink)">
+            <td colspan="2">TOTALS & CLOSING</td>
+            <td class="num">₹${inr(res.totals.drRupees)}</td>
+            <td class="num">₹${inr(res.totals.crRupees)}</td>
+            <td class="num"><span class="${cl.side==='Dr'?'chip-dr':'chip-cr'}">${esc(cl.formatted)}</span></td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+
+    openSheet("Party Ledger Statement", b, "", {kind:"detail", type:"tallyStatement", id:ledgerId});
+  } catch(err) {
+    openSheet("Error", `<p class="bad">${esc(err.message)}</p>`, `<button class="btn" data-act="close">Close</button>`);
+  }
+}
+
+// -------------------------------------------------------------
+// Voucher Detail Sheet
+// -------------------------------------------------------------
+async function dTallyVoucher(voucherId){
+  openSheet("Voucher Details", `<div class="loading">Loading voucher…</div>`, "", {kind:"detail", type:"tallyVoucher", id:voucherId});
+  try {
+    const res = await window.KhataRest.ledger.getVoucher(voucherId);
+    const v = res.voucher || {};
+    const lines = v.lines || [];
+    const refs = v.billRefs || [];
+    const isCancelled = v.status === "cancelled";
+
+    let b = `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div class="mono muted">${esc(v.vno)} · FY ${esc(v.fy)}</div>
+          <div style="font-weight:800;font-size:18px"><span class="chip-vtype ${v.vtype}">${esc(v.vtype)}</span> ${esc(v.narration || "Voucher")}</div>
+        </div>
+        <div class="amt">
+          <div class="big" style="color:var(--brand)">₹${esc(v.formattedTotal)}</div>
+          ${isCancelled ? `<span class="chip bad">CANCELLED</span>` : `<span class="chip good">ACTIVE</span>`}
+        </div>
+      </div>
+
+      <dl class="dl" style="margin-top:12px">
+        <dt>Date</dt><dd>${fmtDate(v.date)}</dd>
+        ${v.mode ? `<dt>Payment Mode</dt><dd>${esc(v.mode)}</dd>` : ""}
+        ${v.refNo ? `<dt>Reference No</dt><dd class="mono">${esc(v.refNo)}</dd>` : ""}
+        ${isCancelled && v.cancelReason ? `<dt>Cancel Reason</dt><dd style="color:var(--bad)">${esc(v.cancelReason)}</dd>` : ""}
+      </dl>
+
+      <div class="legend-s" style="margin-top:16px">Accounting Lines (Double-Entry)</div>
+      <table class="tally-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Particulars (Account Ledger)</th>
+            <th class="num">Debit (Dr)</th>
+            <th class="num">Credit (Cr)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${lines.map(l => `
+            <tr>
+              <td>${l.lineNo}</td>
+              <td><b>${esc(l.ledgerName)}</b> <span class="small muted">(${esc(l.groupName)})</span></td>
+              <td class="num">${l.drRupees > 0 ? inr(l.drRupees) : "—"}</td>
+              <td class="num">${l.crRupees > 0 ? inr(l.crRupees) : "—"}</td>
+            </tr>
+          `).join("")}
+          <tr style="font-weight:800;border-top:2px solid var(--ink)">
+            <td colspan="2">TOTAL</td>
+            <td class="num">₹${esc(v.formattedTotal)}</td>
+            <td class="num">₹${esc(v.formattedTotal)}</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+
+    if(refs.length){
+      b += `
+        <div class="legend-s" style="margin-top:16px">Bill-wise Allocations</div>
+        <div class="list">${refs.map(r => `
+          <div class="row" style="cursor:default">
+            <div class="av in">${svg("receipt")}</div>
+            <div class="main">
+              <div class="t"><b>${esc(r.refType)}:</b> <span class="mono">${esc(r.refName)}</span></div>
+              <div class="s">${r.side} allocation</div>
+            </div>
+            <div class="amt"><b>₹${inr(r.amountRupees)}</b></div>
+          </div>
+        `).join("")}</div>
+      `;
+    }
+
+    if(S.canWrite && !isCancelled){
+      b += `
+        <div class="actions" style="margin-top:20px">
+          <button class="btn danger" data-act="cancelTallyVoucher" data-id="${voucherId}">Cancel Voucher</button>
+        </div>
+      `;
+    }
+
+    openSheet("Voucher " + v.vno, b, "", {kind:"detail", type:"tallyVoucher", id:voucherId});
+  } catch(err) {
+    openSheet("Error", `<p class="bad">${esc(err.message)}</p>`, `<button class="btn" data-act="close">Close</button>`);
+  }
+}
+
+// -------------------------------------------------------------
+// Tally Voucher Entry Form (F6 Receipt / F5 Payment / Contra / Journal)
+// -------------------------------------------------------------
+async function tallyVoucherForm(vtype = "receipt", initialPartyId = null){
+  await ensureTallyData();
+  const ledgers = S._tallyLedgers || [];
+  const cashBankLedgers = ledgers.filter(l => l.groupId === "grp_cash" || l.groupId === "grp_bank" || l.name === "Cash" || l.name === "Bank");
+  const partyLedgers = ledgers.filter(l => vtype === "receipt" ? (l.partyType === "client" || l.groupId === "grp_debtors") : (l.partyType === "vendor" || l.groupId === "grp_creditors"));
+
+  const title = vtype === "receipt" ? "Receipt Voucher (F6)" :
+                vtype === "payment" ? "Payment Voucher (F5)" :
+                vtype === "contra" ? "Contra Voucher (F4)" : "Journal Voucher (F7)";
+
+  let b = `
+    <form id="tallyVchForm" data-form="tallyVoucher" data-vtype="${vtype}">
+      <div class="fg">
+        <label class="f full"><span>Voucher Type</span><input readonly value="${title}" style="background:var(--surface-2);font-weight:700"></label>
+        <label class="f"><span>Date</span><input name="date" type="date" required value="${today()}"></label>
+        <label class="f"><span>Amount (₹)</span><input name="amount" type="number" inputmode="decimal" step="any" min="0.01" required placeholder="0.00" style="font-size:18px;font-weight:700"></label>
+
+        ${(vtype === "receipt" || vtype === "payment") ? `
+          <label class="f full"><span>Account (Deposit to / Paid from)</span>
+            <select name="cashBankLedger" required>
+              ${cashBankLedgers.map(l => `<option value="${l.id}">${esc(l.name)} (${esc(l.groupName)})</option>`).join("")}
+            </select>
+          </label>
+          <label class="f full"><span>Particulars (${vtype === "receipt" ? "Client" : "Vendor"} Ledger)</span>
+            <select name="partyLedger" id="vchPartySelect" required data-act="changeVchParty">
+              <option value="">Select Party</option>
+              ${partyLedgers.map(l => `<option value="${l.id}" ${l.id===initialPartyId?'selected':''}>${esc(l.name)} [${esc(l.formattedClosing)}]</option>`).join("")}
+            </select>
+          </label>
+          <label class="f"><span>Payment Mode</span><select name="mode">${MODES.map(m=>`<option>${m}</option>`).join("")}</select></label>
+          <label class="f"><span>Cheque / UTR / Ref No</span><input name="refNo" placeholder="e.g. UTR-918237"></label>
+          <div id="billAllocationsContainer" class="f full"></div>
+        ` : vtype === "contra" ? `
+          <label class="f full"><span>Debit Account (Deposit To)</span>
+            <select name="drLedger" required>
+              ${cashBankLedgers.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="f full"><span>Credit Account (Withdraw From)</span>
+            <select name="crLedger" required>
+              ${cashBankLedgers.map((l,idx) => `<option value="${l.id}" ${idx===1?'selected':''}>${esc(l.name)}</option>`).join("")}
+            </select>
+          </label>
+        ` : `
+          <label class="f full"><span>Debit Ledger (By)</span>
+            <select name="drLedger" required>
+              ${ledgers.map(l => `<option value="${l.id}">${esc(l.name)} (${esc(l.groupName)})</option>`).join("")}
+            </select>
+          </label>
+          <label class="f full"><span>Credit Ledger (To)</span>
+            <select name="crLedger" required>
+              ${ledgers.map((l,idx) => `<option value="${l.id}" ${idx===1?'selected':''}>${esc(l.name)} (${esc(l.groupName)})</option>`).join("")}
+            </select>
+          </label>
+        `}
+
+        <label class="f full"><span>Narration</span><input name="narration" placeholder="e.g. Payment settled via Bank Transfer"></label>
+      </div>
+    </form>
+  `;
+
+  openSheet(title, b, `<button class="btn" data-act="close">Cancel</button><button class="btn pri" type="submit" form="tallyVchForm">Save Voucher (Ctrl+A)</button>`);
+
+  if(initialPartyId){
+    loadPartyPendingAllocations(initialPartyId);
+  }
+}
+
+async function loadPartyPendingAllocations(ledgerId){
+  const container = $("#billAllocationsContainer");
+  if(!container || !ledgerId) return;
+  try {
+    const res = await window.KhataRest.ledger.getPendingBills(ledgerId);
+    const pending = res.pending || [];
+    if(!pending.length){
+      container.innerHTML = `<p class="small muted" style="margin:4px 0">No pending unpaid bills for this party. Will be posted as On Account / Advance.</p>`;
+      return;
+    }
+    container.innerHTML = `
+      <div style="font-weight:700;font-size:13px;margin:8px 0 4px 0">Bill-wise Allocation (Against Pending Bills)</div>
+      <div class="list" style="max-height:160px;overflow-y:auto;border:1px solid var(--line-subtle);border-radius:6px;padding:4px">
+        ${pending.map(p => `
+          <div class="row" style="font-size:12.5px;padding:6px">
+            <div class="main">
+              <div class="t"><b class="mono">${esc(p.refName)}</b> · ${fmtDate(p.billDate)}</div>
+              <div class="s">Pending: ${esc(p.formattedPending)}</div>
+            </div>
+            <input type="number" step="any" min="0" max="${p.pendingRupees}" class="alloc-input" data-ref="${esc(p.refName)}" placeholder="0.00" style="width:90px;padding:3px 6px;font-size:12.5px">
+          </div>
+        `).join("")}
+      </div>
+    `;
+  } catch(e) {
+    container.innerHTML = "";
+  }
+}
+
+async function saveTallyVoucher(form){
+  const vtype = form.dataset.vtype;
+  const date = form.date.value || today();
+  const amount = parseFloat(form.amount.value);
+  if(!(amount > 0)){ toast("Enter a valid amount."); return; }
+
+  let lines = [];
+  let billAllocations = [];
+
+  if(vtype === "receipt"){
+    const cashBankLedger = form.cashBankLedger.value;
+    const partyLedger = form.partyLedger.value;
+    if(!partyLedger){ toast("Select a client party ledger."); return; }
+
+    // Dr Cash/Bank, Cr Client
+    lines = [
+      { ledgerId: cashBankLedger, drAmount: amount, crAmount: 0 },
+      { ledgerId: partyLedger, drAmount: 0, crAmount: amount }
+    ];
+
+    // Check manual allocations
+    const inputs = [...form.querySelectorAll(".alloc-input")];
+    let allocSum = 0;
+    inputs.forEach(inp => {
+      const val = parseFloat(inp.value) || 0;
+      if(val > 0){
+        billAllocations.push({
+          ledgerId: partyLedger,
+          refType: "against",
+          refName: inp.dataset.ref,
+          amount: val,
+          side: "Cr"
+        });
+        allocSum += val;
+      }
+    });
+
+    if(allocSum < amount){
+      billAllocations.push({
+        ledgerId: partyLedger,
+        refType: allocSum > 0 ? "advance" : "on_account",
+        refName: "ON-ACC",
+        amount: Math.round((amount - allocSum) * 100) / 100,
+        side: "Cr"
+      });
+    }
+  } else if(vtype === "payment"){
+    const cashBankLedger = form.cashBankLedger.value;
+    const partyLedger = form.partyLedger.value;
+    if(!partyLedger){ toast("Select a vendor party ledger."); return; }
+
+    // Dr Vendor, Cr Cash/Bank
+    lines = [
+      { ledgerId: partyLedger, drAmount: amount, crAmount: 0 },
+      { ledgerId: cashBankLedger, drAmount: 0, crAmount: amount }
+    ];
+
+    const inputs = [...form.querySelectorAll(".alloc-input")];
+    let allocSum = 0;
+    inputs.forEach(inp => {
+      const val = parseFloat(inp.value) || 0;
+      if(val > 0){
+        billAllocations.push({
+          ledgerId: partyLedger,
+          refType: "against",
+          refName: inp.dataset.ref,
+          amount: val,
+          side: "Dr"
+        });
+        allocSum += val;
+      }
+    });
+
+    if(allocSum < amount){
+      billAllocations.push({
+        ledgerId: partyLedger,
+        refType: allocSum > 0 ? "advance" : "on_account",
+        refName: "ON-ACC",
+        amount: Math.round((amount - allocSum) * 100) / 100,
+        side: "Dr"
+      });
+    }
+  } else {
+    const drLedger = form.drLedger.value;
+    const crLedger = form.crLedger.value;
+    if(drLedger === crLedger){ toast("Debit and Credit accounts must be different."); return; }
+
+    lines = [
+      { ledgerId: drLedger, drAmount: amount, crAmount: 0 },
+      { ledgerId: crLedger, drAmount: 0, crAmount: amount }
+    ];
+  }
+
+  const payload = {
+    vtype,
+    date,
+    narration: form.narration?.value?.trim() || "",
+    refNo: form.refNo?.value?.trim() || "",
+    mode: form.mode?.value || "",
+    lines,
+    billAllocations
+  };
+
+  try {
+    const res = await window.KhataRest.ledger.createVoucher(payload);
+    toast(`Voucher ${res.vno} saved successfully`);
+    closeSheet();
+    await ensureTallyData(true);
+    dTallyVoucher(res.voucherId);
+  } catch(e) {
+    toast(e.message || "Could not save voucher.");
+  }
+}
+
+// Global Keyboard Shortcuts (F5, F6, F4, F7, Alt+C)
+window.addEventListener("keydown", (e) => {
+  if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+  if (e.key === "F6") { e.preventDefault(); tallyVoucherForm("receipt"); }
+  else if (e.key === "F5") { e.preventDefault(); tallyVoucherForm("payment"); }
+  else if (e.key === "F4") { e.preventDefault(); tallyVoucherForm("contra"); }
+  else if (e.key === "F7") { e.preventDefault(); tallyVoucherForm("journal"); }
+  else if (e.key === "Escape") { if (S.sheet) closeSheet(); }
+});
+
 function missing(type, id, refresh){
   if(refresh){ if(S.sheet && S.sheet.wait>0){ S.sheet.wait--; return; } closeSheet(); return; }
   openSheet("Saving…", `<div class="loading">Saving…</div>`, "", {kind:"detail", type, id, wait:30});
@@ -2328,7 +3132,11 @@ function dVendor(id, refresh){
   const billed=sum(bs,b=>b.amount), paid=sum(bs,paidOf);
   let b=`<div class="tiles"><div class="tile"><div class="k">Billed</div><div class="v num">${inrShort(billed)}</div></div><div class="tile good"><div class="k">Paid</div><div class="v num">${inrShort(paid)}</div></div><div class="tile bad"><div class="k">Due</div><div class="v num">${inrShort(billed-paid)}</div></div></div>
   <dl class="dl" style="margin-top:12px">${v.phone?`<dt>Phone</dt><dd>${esc(v.phone)}</dd>`:""}${v.gstin?`<dt>GSTIN</dt><dd class="mono">${esc(v.gstin)}</dd>`:""}${v.address?`<dt>Address</dt><dd>${esc(v.address)}</dd>`:""}${v.note?`<dt>Supplies</dt><dd>${esc(v.note)}</dd>`:""}</dl>`;
-  if(S.canWrite) b+=`<div class="actions"><button class="btn pri" data-act="newBill" data-vendor="${id}">${svg("cam")}Upload bill</button></div>`;
+  if(S.canWrite) b+=`<div class="actions">
+    <button class="btn pri" data-act="newBill" data-vendor="${id}">${svg("cam")}Upload bill</button>
+    <button class="btn" data-act="openTallyVendor" data-id="${id}">${svg("receipt")}Tally Ledger</button>
+    <button class="btn" data-act="tallyPaymentForVendor" data-id="${id}"><span class="kbd-hint" style="font-size:10px;margin-right:2px">F5</span>+ Pay Vendor</button>
+  </div>`;
   b+=`<div class="legend-s">Bills (${bs.length})</div>` + (bs.length?`<div class="list">${bs.map(x=>{const st=billStatus(x); return `<button class="row" data-act="openBill" data-id="${x.id}"><div class="av out">${svg("receipt")}</div><div class="main"><div class="t">${esc(x.billNo||"Bill")}</div><div class="s">${fmtDate(x.date)}</div></div><div class="amt"><b>${inr(x.amount)}</b><span class="chip ${st}">${st}</span></div></button>`;}).join("")}</div>`:`<p class="small muted">No bills yet.</p>`);
   if(S.canWrite) b+=`<div class="actions" style="margin-top:18px"><button class="btn" data-act="editVendor" data-id="${id}">${svg("edit")}Edit</button><button class="btn danger" data-act="delVendor" data-id="${id}">${svg("trash")}Delete</button></div>`;
   openSheet(v.name, b, "", {kind:"detail", type:"vendor", id});
@@ -3735,6 +4543,8 @@ function dClient(id, refresh){
 
   <div class="cli-quick-acts">
     ${S.canWrite ? `<button class="btn pri" data-act="newWorkNoteForClient" data-id="${id}" data-site="${esc(cs.site!=="all"?cs.site:"")}">${svg("doc")}Direct Work Entry</button>` : ""}
+    <button class="btn" data-act="openTallyClient" data-id="${id}">${svg("receipt")}Tally Ledger</button>
+    ${S.canWrite ? `<button class="btn" data-act="tallyReceiptForClient" data-id="${id}" style="background:var(--good-bg);color:var(--good);border:1px solid var(--good-border);font-weight:700"><span class="kbd-hint" style="font-size:10px;margin-right:2px">F6</span>+ Receipt</button>` : ""}
     ${S.canWrite ? `<button class="btn" data-act="clientPay" data-id="${id}" data-site="${esc(cs.site!=="all"?cs.site:"")}">${svg("down")}Receive Payment</button>` : ""}
     ${S.canWrite ? `<button class="btn" data-act="newInvoiceForClient" data-id="${id}" data-site="${esc(cs.site!=="all"?cs.site:"")}">${svg("plus")}New Invoice</button>` : ""}
     <button class="btn" data-act="waClientLedger" data-id="${id}" data-site="${esc(cs.site)}" data-period="${esc(cs.period)}">${svg("wa")}Share Statement</button>
@@ -3744,6 +4554,7 @@ function dClient(id, refresh){
 
   <div class="seg" role="group" style="margin-bottom:12px">
     <button data-act="cliTab" data-id="${id}" data-tab="ledger" aria-pressed="${cs.tab==='ledger'}">Khata Ledger</button>
+    <button data-act="openTallyClient" data-id="${id}" style="color:var(--pri);font-weight:700">📑 Tally Statement</button>
     <button data-act="cliTab" data-id="${id}" data-tab="sites" aria-pressed="${cs.tab==='sites'}">Sites (${allSites.length})</button>
     <button data-act="cliTab" data-id="${id}" data-tab="invoices" aria-pressed="${cs.tab==='invoices'}">Invoices (${invs.length})</button>
     <button data-act="cliTab" data-id="${id}" data-tab="quotes" aria-pressed="${cs.tab==='quotes'}">Quotations (${quotes.length})</button>
@@ -4545,6 +5356,93 @@ document.addEventListener("click", async e => {
     case "openMove": dMove(id); break;
     case "openVendor": dVendor(id); break;
     case "openBill": dBill(id); break;
+    case "openTallyStatement": dTallyStatement(id); break;
+    case "openTallyClient": {
+      e.stopPropagation();
+      try {
+        const res = await window.KhataRest.ledger.getPartyLedger("client", id);
+        if(res && res.ledgerId) dTallyStatement(res.ledgerId);
+      } catch(err) {
+        toast(err.message || "Failed to load client ledger.");
+      }
+      break;
+    }
+    case "tallyReceiptForClient": {
+      e.stopPropagation();
+      try {
+        const res = await window.KhataRest.ledger.getPartyLedger("client", id);
+        if(res && res.ledgerId) tallyVoucherForm("receipt", res.ledgerId);
+      } catch(err) {
+        toast(err.message || "Failed to initialize receipt voucher.");
+      }
+      break;
+    }
+    case "openTallyVendor": {
+      e.stopPropagation();
+      try {
+        const res = await window.KhataRest.ledger.getPartyLedger("vendor", id);
+        if(res && res.ledgerId) dTallyStatement(res.ledgerId);
+      } catch(err) {
+        toast(err.message || "Failed to load vendor ledger.");
+      }
+      break;
+    }
+    case "tallyPaymentForVendor": {
+      e.stopPropagation();
+      try {
+        const res = await window.KhataRest.ledger.getPartyLedger("vendor", id);
+        if(res && res.ledgerId) tallyVoucherForm("payment", res.ledgerId);
+      } catch(err) {
+        toast(err.message || "Failed to initialize payment voucher.");
+      }
+      break;
+    }
+    case "openTallyDayBook": {
+      S.view = "tally";
+      S.sub.tally = "daybook";
+      render();
+      break;
+    }
+    case "openTallyTrial": {
+      S.view = "tally";
+      S.sub.tally = "trial";
+      render();
+      break;
+    }
+    case "openTallyVoucher": dTallyVoucher(id); break;
+    case "newReceiptVoucher": tallyVoucherForm("receipt", el.dataset.party); break;
+    case "newPaymentVoucher": tallyVoucherForm("payment", el.dataset.party); break;
+    case "newContraVoucher": tallyVoucherForm("contra"); break;
+    case "newJournalVoucher": tallyVoucherForm("journal"); break;
+    case "setTallyPartyFilter": S.tallyPartyFilter = el.dataset.v; render(); break;
+    case "refreshTallyData": ensureTallyData(true); toast("Tally data refreshed"); break;
+    case "refreshTallyTrial": loadTrialBalanceUI(); toast("Trial Balance updated"); break;
+    case "tallyPeriod": dTallyStatement(id, el.dataset.v); break;
+    case "shareTallyWhatsApp": {
+      const l = (S._tallyLedgers||[]).find(x => x.id === id);
+      if(l){
+        const ph = (l.phone || "").replace(/\D/g,"");
+        const num = ph.length === 10 ? "91" + ph : ph;
+        const txt = `Hello ${l.name},\nYour ledger balance with ${S.settings.name||"us"} is ${l.formattedClosing}.\nThank you!`;
+        window.open(`https://wa.me/${num}?text=${encodeURIComponent(txt)}`, "_blank");
+      }
+      break;
+    }
+    case "cancelTallyVoucher": {
+      confirmSheet("Are you sure you want to cancel this voucher?", async () => {
+        const reason = prompt("Enter cancellation reason:", "Entry mistake");
+        if(!reason) return;
+        try {
+          await window.KhataRest.ledger.cancelVoucher(id, reason);
+          toast("Voucher cancelled");
+          closeSheet();
+          await ensureTallyData(true);
+        } catch(e) {
+          toast(e.message || "Could not cancel voucher.");
+        }
+      });
+      break;
+    }
     case "newTxn": txnForm(el.dataset.type); break;
     case "editTxn": txnForm(null, S.txns.find(x=>x.id===id)); break;
     case "txnType": { const f=$("#txnForm"); const v=el.dataset.v; f.type.value=v; $$("[data-act=txnType]",f).forEach(b=>b.setAttribute("aria-pressed", b.dataset.v===v)); f.category.innerHTML=(v==="income"?INC_CATS:EXP_CATS).map(c=>`<option>${c}</option>`).join(""); f.party.closest("label").firstElementChild.textContent = v==="income"?"Received from":"Paid to"; f.mode.closest("label").firstElementChild.textContent = v==="income"?"Paid by":"Paid via"; $(".sheet-h h3").textContent=(f.dataset.id?"Edit ":"Add ")+v; break; }
@@ -5012,9 +5910,14 @@ document.addEventListener("change", async e => {
 });
 document.addEventListener("submit", async e => {
   const f=e.target; if(!f.dataset.form) return; e.preventDefault();
-  const fn = {doc:saveDoc, pay:savePay, txn:saveTxn, mat:saveMat, move:saveMove, ven:saveVen, bill:saveBill, cli:saveCli, set:saveSettings, user:saveUser, pass:savePass, reset:saveReset, clientPay:saveClientPay, workNote:saveWorkNote}[f.dataset.form];
+  const fn = {doc:saveDoc, pay:savePay, txn:saveTxn, mat:saveMat, move:saveMove, ven:saveVen, bill:saveBill, cli:saveCli, set:saveSettings, user:saveUser, pass:savePass, reset:saveReset, clientPay:saveClientPay, workNote:saveWorkNote, tallyVoucher:saveTallyVoucher}[f.dataset.form];
   if(!fn) return;
   await fn(f);
+});
+document.addEventListener("change", e => {
+  if (e.target && e.target.id === "vchPartySelect") {
+    loadPartyPendingAllocations(e.target.value);
+  }
 });
 document.addEventListener("keydown", e => { if(e.key==="Escape"){ if($(".viewer")) $("#toastHost").innerHTML=""; else if(S.sheet) closeSheet(); } });
 

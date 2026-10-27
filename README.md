@@ -159,7 +159,46 @@ All routes need `Authorization: Bearer <token>` except status/setup/login.
 | POST | `/api/files` | Raw body upload (JPG/PNG/WEBP/PDF), header `X-File-Name` |
 | GET | `/api/files/:id?t=<token>` | View a file |
 
+## Tally Account (Double-Entry Ledger Module)
+
+The app includes a full **Tally Prime style Double-Entry Ledger module** accessible from the bottom navigation tab **"Tally Account"**.
+
+### Database Migration
+The migration script is located at `db/migrations/002_ledger.sql`.
+* **Automatic on Start**: The server automatically discovers and runs all `.sql` migration files in `db/migrations/` on startup.
+* **Manual execution (Supabase SQL Editor / psql)**: Run the contents of `db/migrations/002_ledger.sql`. The migration is 100% idempotent and non-destructive.
+
+### Automated Tests
+Run the test suite verifying double-entry scenarios 1, 2, and 5:
+```bash
+npm test
+```
+
+### Posting Rules Table
+
+| Transaction | Source | Double-Entry Posting (Exact integer paise) | Bill-wise Allocation |
+|---|---|---|---|
+| **Sales Invoice** | `invoices` | **Dr** Client (Total)<br>**Cr** Sales Accounts (Taxable)<br>**Cr** Output CGST + SGST (intra) or Output IGST (inter)<br>**Dr/Cr** Round Off | New Ref = Invoice No |
+| **Vendor Bill** | `vendor_bills` | **Dr** Purchase Accounts (Amount - Tax)<br>**Dr** Input CGST + SGST (intra) or Input IGST (inter)<br>**Cr** Vendor (Total) | New Ref = Bill No |
+| **Receipt (F6)** | Manual / Party | **Dr** Cash / Bank Account<br>**Cr** Client Ledger | Agst Ref (Pending Invoices FIFO / manual) or Advance |
+| **Payment (F5)** | Manual / Vendor | **Dr** Vendor Ledger<br>**Cr** Cash / Bank Account | Agst Ref (Pending Bills) or Advance |
+| **Contra (F4)** | Manual | **Dr** Bank / Cash (Deposit to)<br>**Cr** Cash / Bank (Withdraw from) | — |
+| **Journal (F7)** | Manual | Balanced **Dr** Ledger / **Cr** Ledger (`Σ Dr == Σ Cr`) | — |
+
+### Permissions
+* **Staff**: View ledgers, statements, Day Book, Trial Balance, and create Receipt / Payment vouchers.
+* **Admin**: Create / alter / cancel vouchers, alter chart of accounts / ledgers, create Contra & Journal entries, delete invoices/bills (protected with allocation checks), and set Books Lock Date.
+
+### Keyboard Shortcuts (Desktop)
+* `F6` — Quick Receipt voucher modal
+* `F5` — Quick Payment voucher modal
+* `F4` — Contra voucher modal
+* `F7` — Journal voucher modal
+* `Alt+C` — New Ledger modal
+* `Esc` — Close sheet / modal
+
 ## Good to know
 - **Vercel upload limit is 4 MB per file.** Photos are shrunk on the phone before upload (usually 300–600 KB), so this only matters for big PDFs. Your own server allows 20 MB.
 - The PDF prints English text. Hindi or Gujarati letters in item names will not show in the PDF.
 - The WhatsApp button opens a chat with the invoice details. Attach the downloaded PDF yourself.
+

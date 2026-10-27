@@ -217,5 +217,19 @@
       testDatabase: (data) => req("POST", "/config/database/test", data),
       saveDatabase: (data) => req("POST", "/config/database/save", data),
     },
+    ledger: {
+      getGroups: () => req("GET", "/ledger/groups"),
+      getLedgers: (params = "") => req("GET", "/ledger/ledgers" + (params ? "?" + params : "")),
+      createLedger: (data) => req("POST", "/ledger/ledgers", data),
+      updateLedger: (id, patch) => req("PATCH", `/ledger/ledgers/${encodeURIComponent(id)}`, patch),
+      getStatement: (id, params = "") => req("GET", `/ledger/ledgers/${encodeURIComponent(id)}/statement` + (params ? "?" + params : "")),
+      getPendingBills: (id) => req("GET", `/ledger/ledgers/${encodeURIComponent(id)}/pending-bills`),
+      getVouchers: (params = "") => req("GET", "/ledger/vouchers" + (params ? "?" + params : "")),
+      getVoucher: (id) => req("GET", `/ledger/vouchers/${encodeURIComponent(id)}`),
+      createVoucher: (data) => req("POST", "/ledger/vouchers", data),
+      cancelVoucher: (id, reason) => req("POST", `/ledger/vouchers/${encodeURIComponent(id)}/cancel`, { reason }),
+      getTrialBalance: (params = "") => req("GET", "/ledger/reports/trial-balance" + (params ? "?" + params : "")),
+      getPartyLedger: (partyType, partyId) => req("GET", `/ledger/party-ledger/${encodeURIComponent(partyType)}/${encodeURIComponent(partyId)}`),
+    },
   };
 })();

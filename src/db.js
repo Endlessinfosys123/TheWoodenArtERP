@@ -43,17 +43,32 @@ function setupConnection(targetUrl) {
 // Initial connection setup
 setupConnection(currentUrl);
 
+async function executeSql(sql) {
+  if (pool) {
+    await pool.query(sql);
+  } else {
+    await pgliteDb.exec(sql);
+  }
+}
+
 async function init() {
   if (!pool && !pgliteDb) {
     throw new Error("DATABASE_URL is not configured in Vercel Environment Variables. Please add DATABASE_URL in Vercel Project Settings.");
   }
   if (!ready) {
-    const sql = fs.readFileSync(path.join(__dirname, "..", "db", "schema.sql"), "utf8");
-    if (pool) {
-      ready = pool.query(sql).catch((e) => { ready = null; throw e; });
-    } else {
-      ready = pgliteDb.exec(sql).catch((e) => { ready = null; throw e; });
-    }
+    ready = (async () => {
+      const schemaSql = fs.readFileSync(path.join(__dirname, "..", "db", "schema.sql"), "utf8");
+      await executeSql(schemaSql);
+
+      const migDir = path.join(__dirname, "..", "db", "migrations");
+      if (fs.existsSync(migDir)) {
+        const files = fs.readdirSync(migDir).filter((f) => f.endsWith(".sql")).sort();
+        for (const file of files) {
+          const migSql = fs.readFileSync(path.join(migDir, file), "utf8");
+          await executeSql(migSql);
+        }
+      }
+    })().catch((e) => { ready = null; throw e; });
   }
   return ready;
 }
@@ -64,6 +79,28 @@ async function query(text, params) {
     return pool.query(text, params);
   }
   return pgliteDb.query(text, params);
+}
+
+async function withTransaction(callback) {
+  await init();
+  if (pool) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const res = await callback(client);
+      await client.query("COMMIT");
+      return res;
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  } else {
+    return pgliteDb.transaction(async (tx) => {
+      return callback(tx);
+    });
+  }
 }
 
 // Test a PostgreSQL connection string without switching
@@ -113,6 +150,7 @@ function maskDatabaseUrl(str) {
 module.exports = {
   pool,
   query,
+  withTransaction,
   init,
   testConnection,
   reconfigure,
